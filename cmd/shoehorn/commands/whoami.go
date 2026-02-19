@@ -1,0 +1,81 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/imbabamba/shoehorn-cli/pkg/api"
+	"github.com/imbabamba/shoehorn-cli/pkg/tui"
+	"github.com/imbabamba/shoehorn-cli/pkg/ui"
+	"github.com/spf13/cobra"
+)
+
+var whoamiCmd = &cobra.Command{
+	Use:   "whoami",
+	Short: "Show current user info",
+	Long:  `Display full information about the currently authenticated user.`,
+	RunE:  runWhoami,
+}
+
+func init() {
+	rootCmd.AddCommand(whoamiCmd)
+}
+
+func runWhoami(cmd *cobra.Command, args []string) error {
+	client, err := api.NewClientFromConfig()
+	if err != nil {
+		return err
+	}
+
+	result, spinErr := tui.RunSpinner("Fetching user info...", func() (any, error) {
+		return client.GetMe(context.Background())
+	})
+	if spinErr != nil {
+		return fmt.Errorf("fetch user: %w", spinErr)
+	}
+
+	me := result.(*api.MeResponse)
+
+	mode := ui.DetectMode(noInteractive, outputFormat)
+	if mode == ui.ModeJSON {
+		return ui.RenderJSON(me)
+	}
+	if mode == ui.ModeYAML {
+		return ui.RenderYAML(me)
+	}
+
+	roles := strings.Join(me.Roles, ", ")
+	groups := strings.Join(me.Groups, ", ")
+	teams := strings.Join(me.Teams, ", ")
+	if roles == "" {
+		roles = "—"
+	}
+	if groups == "" {
+		groups = "—"
+	}
+	if teams == "" {
+		teams = "—"
+	}
+
+	panel := tui.RenderDetail(me.Name, []tui.DetailSection{
+		{
+			Fields: []tui.Field{
+				{Label: "Email", Value: me.Email},
+				{Label: "Tenant", Value: me.TenantID},
+				{Label: "User ID", Value: me.ID},
+			},
+		},
+		{
+			Title: "Access",
+			Fields: []tui.Field{
+				{Label: "Roles", Value: roles},
+				{Label: "Groups", Value: groups},
+				{Label: "Teams", Value: teams},
+			},
+		},
+	})
+
+	fmt.Println(panel)
+	return nil
+}

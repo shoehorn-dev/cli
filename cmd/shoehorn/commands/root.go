@@ -13,6 +13,12 @@ var (
 	outputFormat  string
 )
 
+// NoInteractive returns the --no-interactive flag value (for use by sub-packages)
+func NoInteractive() bool { return noInteractive }
+
+// OutputFormat returns the --output flag value (for use by sub-packages)
+func OutputFormat() string { return outputFormat }
+
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
 	Use:   "shoehorn",
@@ -25,6 +31,11 @@ Use it to authenticate, manage workflows, and interact with the Forge service.`,
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// RootCmd returns the root cobra command (used by sub-packages)
+func RootCmd() *cobra.Command {
+	return rootCmd
 }
 
 func init() {

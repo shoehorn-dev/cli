@@ -7,11 +7,13 @@ import (
 
 	"github.com/imbabamba/shoehorn-cli/pkg/api"
 	"github.com/imbabamba/shoehorn-cli/pkg/config"
+	"github.com/imbabamba/shoehorn-cli/pkg/tui"
 	"github.com/spf13/cobra"
 )
 
 var (
 	serverURL string
+	patToken  string
 )
 
 // authCmd represents the auth command group
@@ -25,10 +27,13 @@ var authCmd = &cobra.Command{
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to Shoehorn",
-	Long: `Authenticate with the Shoehorn platform using OAuth2 device flow.
+	Long: `Authenticate with the Shoehorn platform.
 
-This command initiates a device authorization flow and opens your browser
-to complete authentication.`,
+Use --token to authenticate with a Personal Access Token (recommended):
+  shoehorn auth login --server http://localhost:8080 --token shp_your_token
+
+Or use the OAuth2 device flow (requires Zitadel configuration):
+  shoehorn auth login --server http://localhost:8080`,
 	RunE: runLogin,
 }
 
@@ -49,43 +54,101 @@ var logoutCmd = &cobra.Command{
 }
 
 func init() {
-	// Add login flags
 	loginCmd.Flags().StringVar(&serverURL, "server", "http://localhost:8080", "Shoehorn API server URL")
+	loginCmd.Flags().StringVar(&patToken, "token", "", "Personal Access Token (shp_xxx)")
 
-	// Add commands to auth group
 	authCmd.AddCommand(loginCmd)
 	authCmd.AddCommand(statusCmd)
 	authCmd.AddCommand(logoutCmd)
 
-	// Add auth group to root
 	rootCmd.AddCommand(authCmd)
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
-	fmt.Println("Logging in to Shoehorn...")
-
-	// Normalize server URL
 	serverURL = NormalizeServerURL(serverURL)
 
-	// Load config
+	if patToken != "" {
+		return runLoginWithPAT(serverURL, patToken)
+	}
+	return runLoginDeviceFlow(serverURL)
+}
+
+// runLoginWithPAT authenticates using a Personal Access Token
+func runLoginWithPAT(server, token string) error {
+	client := api.NewClient(server)
+	client.SetToken(token)
+
+	ctx := context.Background()
+
+	// Verify token by calling /me
+	result, err := tui.RunSpinner("Verifying token...", func() (any, error) {
+		return client.GetMe(ctx)
+	})
+	if err != nil {
+		fmt.Println(tui.ErrorBox("Authentication Failed", err.Error()))
+		return nil
+	}
+
+	me := result.(*api.MeResponse)
+
+	// Save config
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	currentProfile := cfg.Profiles[cfg.CurrentProfile]
+	if currentProfile == nil {
+		currentProfile = &config.Profile{Name: cfg.CurrentProfile}
+		cfg.Profiles[cfg.CurrentProfile] = currentProfile
+	}
+
+	currentProfile.Server = server
+	currentProfile.Auth = &config.Auth{
+		ProviderType: "pat",
+		Issuer:       server,
+		AccessToken:  token,
+		User: &config.User{
+			Email:    me.Email,
+			Name:     me.Name,
+			TenantID: me.TenantID,
+		},
+	}
+
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+
+	// Success panel
+	body := fmt.Sprintf(
+		"%s  %s\n%s  %s\n%s  %s\n%s  %s",
+		tui.LabelStyle.Render("Name"),    me.Name,
+		tui.LabelStyle.Render("Email"),   me.Email,
+		tui.LabelStyle.Render("Tenant"),  me.TenantID,
+		tui.LabelStyle.Render("Server"),  server,
+	)
+	fmt.Println(tui.SuccessBox("Authenticated with PAT", body))
+	return nil
+}
+
+// runLoginDeviceFlow uses OAuth2 device authorization (requires Zitadel config)
+func runLoginDeviceFlow(server string) error {
+	fmt.Println("Logging in to Shoehorn...")
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Create API client
-	client := api.NewClient(serverURL)
-
+	client := api.NewClient(server)
 	ctx := context.Background()
 
-	// Step 1: Initiate device flow
 	fmt.Println("Initiating device authorization flow...")
 	deviceResp, err := client.InitDeviceFlow(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initiate device flow: %w", err)
 	}
 
-	// Step 2: Display instructions to user
 	fmt.Println()
 	fmt.Println("To authenticate, visit:")
 	if deviceResp.VerificationURIComplete != "" {
@@ -98,8 +161,6 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Printf("Code expires in %d seconds\n", deviceResp.ExpiresIn)
 	fmt.Println()
-
-	// Step 3: Poll for token
 	fmt.Println("Waiting for authentication...")
 
 	var pollResp *api.DevicePollResponse
@@ -117,34 +178,29 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to poll device flow: %w", err)
 		}
 
-		// Check if authentication is complete
 		if pollResp.AccessToken != "" {
 			break
 		}
 
-		// Check pending status
 		if pollResp.Pending {
 			if pollResp.Message == "slow_down" {
-				// Double the interval if we're polling too fast
 				interval *= 2
 			}
 			time.Sleep(interval)
 			continue
 		}
 
-		// Unexpected response
 		return fmt.Errorf("unexpected response from server: %+v", pollResp)
 	}
 
-	// Step 4: Store credentials
 	currentProfile := cfg.Profiles[cfg.CurrentProfile]
 	if currentProfile == nil {
 		return fmt.Errorf("current profile not found: %s", cfg.CurrentProfile)
 	}
 
 	currentProfile.Auth = &config.Auth{
-		ProviderType: "api", // API-proxied auth
-		Issuer:       serverURL,
+		ProviderType: "api",
+		Issuer:       server,
 		ClientID:     "shoehorn-cli",
 		AccessToken:  pollResp.AccessToken,
 		RefreshToken: pollResp.RefreshToken,
@@ -156,14 +212,12 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			TenantID: pollResp.User.TenantID,
 		},
 	}
-
-	currentProfile.Server = serverURL
+	currentProfile.Server = server
 
 	if err := cfg.Save(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	// Success!
 	fmt.Println()
 	fmt.Println("Authentication successful!")
 	fmt.Printf("Logged in as: %s\n", pollResp.User.Email)
@@ -174,19 +228,16 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Tenant: %s\n", pollResp.User.TenantID)
 	}
 	fmt.Printf("Profile: %s\n", cfg.CurrentProfile)
-	fmt.Printf("Server: %s\n", serverURL)
-
+	fmt.Printf("Server: %s\n", server)
 	return nil
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	// Load config
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Get current profile
 	currentProfile, err := cfg.GetCurrentProfile()
 	if err != nil {
 		return err
@@ -198,11 +249,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	if !cfg.IsAuthenticated() {
 		fmt.Println("Status:  Not authenticated")
 		fmt.Println()
-		fmt.Println("Run 'shoehorn auth login' to authenticate")
+		fmt.Println("Run 'shoehorn auth login --token <PAT>' to authenticate")
 		return nil
 	}
 
-	fmt.Println("Status:  Authenticated")
+	if cfg.IsPATAuth() {
+		fmt.Println("Status:  Authenticated (PAT)")
+	} else {
+		fmt.Println("Status:  Authenticated")
+	}
 
 	if currentProfile.Auth.User != nil {
 		fmt.Printf("Email:   %s\n", currentProfile.Auth.User.Email)
@@ -214,29 +269,27 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check token expiration
 	if cfg.IsTokenExpired() {
 		fmt.Println("Token:   Expired (use 'shoehorn auth login' to refresh)")
+	} else if cfg.IsPATAuth() {
+		fmt.Println("Token:   Valid (PAT, no expiry)")
 	} else {
 		timeUntilExpiry := time.Until(currentProfile.Auth.ExpiresAt)
 		fmt.Printf("Token:   Valid (expires in %s)\n", formatDuration(timeUntilExpiry))
 	}
 
-	// Optionally verify with server
+	// Verify with server
 	if currentProfile.Auth.AccessToken != "" && !cfg.IsTokenExpired() {
 		client := api.NewClient(currentProfile.Server)
 		client.SetToken(currentProfile.Auth.AccessToken)
-
 		ctx := context.Background()
 		serverStatus, err := client.GetAuthStatus(ctx)
 		if err != nil {
-			fmt.Printf("Server:  Unable to verify (offline or token invalid)\n")
+			fmt.Println("Server:  Unable to verify (offline or token invalid)")
+		} else if serverStatus.Authenticated {
+			fmt.Println("Server:  Token verified with server")
 		} else {
-			if serverStatus.Authenticated {
-				fmt.Println("Server:  Token verified with server")
-			} else {
-				fmt.Println("Server:  Token rejected by server")
-			}
+			fmt.Println("Server:  Token rejected by server")
 		}
 	}
 
@@ -244,13 +297,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runLogout(cmd *cobra.Command, args []string) error {
-	// Load config
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Clear auth from current profile
 	currentProfile, err := cfg.GetCurrentProfile()
 	if err != nil {
 		return err
@@ -264,31 +315,23 @@ func runLogout(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Logged out from profile: %s\n", cfg.CurrentProfile)
 	fmt.Println("Note: Tokens are not revoked on the server. They will expire naturally.")
-
 	return nil
 }
 
-// Helper functions
-// NormalizeServerURL normalizes a server URL by ensuring it has a scheme and removing trailing slashes
+// NormalizeServerURL normalizes a server URL
 func NormalizeServerURL(url string) string {
-	// Add scheme if missing
 	if url != "" && !hasScheme(url) {
 		url = "https://" + url
 	}
-
-	// Remove trailing slashes
 	for len(url) > 0 && url[len(url)-1] == '/' {
 		url = url[:len(url)-1]
 	}
-
 	return url
 }
 
-// hasScheme checks if a URL has a scheme (http:// or https://)
 func hasScheme(url string) bool {
-	return len(url) > 7 && (url[:7] == "http://" || url[:8] == "https://")
+	return len(url) > 7 && (url[:7] == "http://" || (len(url) > 8 && url[:8] == "https://"))
 }
-
 
 func formatDuration(d time.Duration) string {
 	if d < time.Minute {

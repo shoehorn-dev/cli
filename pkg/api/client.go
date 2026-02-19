@@ -9,7 +9,12 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/imbabamba/shoehorn-cli/pkg/config"
 )
+
+// loadConfig is a package-level alias to avoid import cycles
+var loadConfig = config.Load
 
 // Client is a thin HTTP client for the Shoehorn API
 type Client struct {
@@ -109,6 +114,25 @@ func (c *Client) Put(ctx context.Context, path string, body, result interface{})
 // Delete performs a DELETE request
 func (c *Client) Delete(ctx context.Context, path string) error {
 	return c.do(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// NewClientFromConfig creates an API client from the current config profile.
+// Returns an error if not authenticated.
+func NewClientFromConfig() (*Client, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	if !cfg.IsAuthenticated() {
+		return nil, fmt.Errorf("not authenticated — run: shoehorn auth login --token <PAT>")
+	}
+	profile, err := cfg.GetCurrentProfile()
+	if err != nil {
+		return nil, fmt.Errorf("get profile: %w", err)
+	}
+	c := NewClient(profile.Server)
+	c.SetToken(profile.Auth.AccessToken)
+	return c, nil
 }
 
 // ErrorResponse represents an API error response

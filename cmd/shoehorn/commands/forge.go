@@ -2,13 +2,15 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
 	"time"
 
+	"github.com/charmbracelet/bubbles/table"
 	"github.com/imbabamba/shoehorn-cli/pkg/api"
-	"github.com/imbabamba/shoehorn-cli/pkg/config"
+	"github.com/imbabamba/shoehorn-cli/pkg/tui"
 	"github.com/imbabamba/shoehorn-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +33,6 @@ var runCmd = &cobra.Command{
 var runListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List workflow runs",
-	Long:  `List all workflow runs for the current tenant.`,
 	RunE:  runListRuns,
 }
 
@@ -39,21 +40,64 @@ var runListCmd = &cobra.Command{
 var runGetCmd = &cobra.Command{
 	Use:   "get <run-id>",
 	Short: "Get workflow run details",
-	Long:  `Get detailed information about a specific workflow run.`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runGetRun,
 }
 
+// runCreateCmd creates a new forge run
+var runCreateCmd = &cobra.Command{
+	Use:   "create <mold-slug>",
+	Short: "Create a new workflow run",
+	Long: `Start a new Forge workflow run from a mold slug.
+
+Optionally pass input values as JSON:
+  shoehorn forge run create my-mold --inputs '{"env":"staging"}'`,
+	Args: cobra.ExactArgs(1),
+	RunE: runCreateRun,
+}
+
+// moldsCmd is the forge molds subcommand group
+var moldsCmd = &cobra.Command{
+	Use:   "molds",
+	Short: "Manage workflow molds (templates)",
+}
+
+// moldsListCmd lists all molds
+var moldsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all molds",
+	RunE:  runMoldsList,
+}
+
+// moldsGetCmd gets a single mold
+var moldsGetCmd = &cobra.Command{
+	Use:   "get <slug>",
+	Short: "Get details for a specific mold",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runMoldsGet,
+}
+
+var runInputsJSON string
+
 func init() {
-	// Build command hierarchy
+	runCreateCmd.Flags().StringVar(&runInputsJSON, "inputs", "", "Input values as JSON object")
+
 	runCmd.AddCommand(runListCmd)
 	runCmd.AddCommand(runGetCmd)
+	runCmd.AddCommand(runCreateCmd)
+
+	moldsCmd.AddCommand(moldsListCmd)
+	moldsCmd.AddCommand(moldsGetCmd)
+
 	forgeCmd.AddCommand(runCmd)
+	forgeCmd.AddCommand(moldsCmd)
 	rootCmd.AddCommand(forgeCmd)
 }
 
-// ForgeRun represents a workflow run
-type ForgeRun struct {
+// ─── Runs ────────────────────────────────────────────────────────────────────
+
+// legacyForgeRun mirrors the existing fields from the old API shape
+type legacyForgeRun struct {
 	ID             string     `json:"id"`
 	MoldID         string     `json:"mold_id"`
 	TenantID       string     `json:"tenant_id"`
@@ -66,59 +110,31 @@ type ForgeRun struct {
 	IdempotencyKey *string    `json:"idempotency_key,omitempty"`
 }
 
-// ForgeRunsResponse represents the API response for listing runs
-type ForgeRunsResponse struct {
-	Runs       []ForgeRun `json:"runs"`
-	TotalCount int        `json:"total_count"`
-	Page       int        `json:"page"`
-	PageSize   int        `json:"page_size"`
+type legacyRunsResponse struct {
+	Runs       []legacyForgeRun `json:"runs"`
+	TotalCount int              `json:"total_count"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
 }
 
 func runListRuns(cmd *cobra.Command, args []string) error {
-	// Load config and create API client
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// Get current profile
-	currentProfile, err := cfg.GetCurrentProfile()
+	client, err := api.NewClientFromConfig()
 	if err != nil {
 		return err
 	}
 
-	// Create API client with server URL
-	client := api.NewClient(currentProfile.Server)
-
-	// Set auth token if available
-	if !cfg.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'shoehorn auth login' first")
-	}
-	client.SetToken(currentProfile.Auth.AccessToken)
-
-	// Make API request
 	ctx := context.Background()
-	var response ForgeRunsResponse
-
+	var response legacyRunsResponse
 	if err := client.Get(ctx, "/api/v1/forge/runs", &response); err != nil {
 		return fmt.Errorf("failed to list runs: %w", err)
 	}
 
-	// Detect output mode
 	mode := ui.DetectMode(noInteractive, outputFormat)
-
-	// Render based on mode
 	switch mode {
 	case ui.ModeJSON:
 		return ui.RenderJSON(response)
 	case ui.ModeYAML:
 		return ui.RenderYAML(response)
-	case ui.ModeInteractive:
-		// TODO: Implement interactive TUI in future
-		// For now, fall through to plain table
-		fallthrough
-	case ui.ModePlain:
-		return outputRunsTable(response.Runs)
 	default:
 		return outputRunsTable(response.Runs)
 	}
@@ -127,56 +143,195 @@ func runListRuns(cmd *cobra.Command, args []string) error {
 func runGetRun(cmd *cobra.Command, args []string) error {
 	runID := args[0]
 
-	// Load config and create API client
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// Get current profile
-	currentProfile, err := cfg.GetCurrentProfile()
+	client, err := api.NewClientFromConfig()
 	if err != nil {
 		return err
 	}
 
-	// Create API client with server URL
-	client := api.NewClient(currentProfile.Server)
-
-	// Set auth token if available
-	if !cfg.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'shoehorn auth login' first")
-	}
-	client.SetToken(currentProfile.Auth.AccessToken)
-
-	// Make API request
 	ctx := context.Background()
-	var run ForgeRun
-
+	var run legacyForgeRun
 	if err := client.Get(ctx, "/api/v1/forge/runs/"+runID, &run); err != nil {
 		return fmt.Errorf("failed to get run: %w", err)
 	}
 
-	// Detect output mode
 	mode := ui.DetectMode(noInteractive, outputFormat)
-
-	// Render based on mode
 	switch mode {
 	case ui.ModeJSON:
 		return ui.RenderJSON(run)
 	case ui.ModeYAML:
 		return ui.RenderYAML(run)
-	case ui.ModeInteractive:
-		// TODO: Implement interactive TUI in future
-		// For now, fall through to plain table
-		fallthrough
-	case ui.ModePlain:
-		return outputRunDetails(run)
 	default:
 		return outputRunDetails(run)
 	}
 }
 
-func outputRunsTable(runs []ForgeRun) error {
+func runCreateRun(cmd *cobra.Command, args []string) error {
+	moldSlug := args[0]
+
+	var inputs map[string]any
+	if runInputsJSON != "" {
+		if err := json.Unmarshal([]byte(runInputsJSON), &inputs); err != nil {
+			return fmt.Errorf("parse --inputs JSON: %w", err)
+		}
+	}
+
+	client, err := api.NewClientFromConfig()
+	if err != nil {
+		return err
+	}
+
+	result, spinErr := tui.RunSpinner(fmt.Sprintf("Starting run for mold %q...", moldSlug), func() (any, error) {
+		return client.CreateRun(context.Background(), moldSlug, inputs)
+	})
+	if spinErr != nil {
+		fmt.Println(tui.ErrorBox("Run Failed", spinErr.Error()))
+		return nil
+	}
+
+	run := result.(*api.ForgeRun)
+
+	body := fmt.Sprintf(
+		"%s  %s\n%s  %s\n%s  %s",
+		tui.LabelStyle.Render("Run ID"),    run.ID,
+		tui.LabelStyle.Render("Mold"),      moldSlug,
+		tui.LabelStyle.Render("Status"),    tui.StatusColor(run.Status).Render(run.Status),
+	)
+	fmt.Println(tui.SuccessBox("Run Created", body))
+	return nil
+}
+
+// ─── Molds ───────────────────────────────────────────────────────────────────
+
+func runMoldsList(cmd *cobra.Command, args []string) error {
+	client, err := api.NewClientFromConfig()
+	if err != nil {
+		return err
+	}
+
+	result, spinErr := tui.RunSpinner("Loading molds...", func() (any, error) {
+		return client.ListMolds(context.Background())
+	})
+	if spinErr != nil {
+		return fmt.Errorf("list molds: %w", spinErr)
+	}
+
+	molds := result.([]*api.Mold)
+
+	mode := ui.DetectMode(noInteractive, outputFormat)
+	if mode == ui.ModeJSON {
+		return ui.RenderJSON(molds)
+	}
+	if mode == ui.ModeYAML {
+		return ui.RenderYAML(molds)
+	}
+
+	cols := []table.Column{
+		{Title: "Name", Width: 28},
+		{Title: "Slug", Width: 24},
+		{Title: "Version", Width: 10},
+		{Title: "Description", Width: 40},
+	}
+
+	rows := make([]table.Row, len(molds))
+	for i, m := range molds {
+		desc := m.Description
+		if len(desc) > 38 {
+			desc = desc[:38] + "…"
+		}
+		rows[i] = table.Row{m.Name, m.Slug, m.Version, desc}
+	}
+
+	_, err = tui.RunTable(tui.TableConfig{
+		Title:   fmt.Sprintf("Molds  (%d)", len(molds)),
+		Columns: cols,
+		Rows:    rows,
+	})
+	return err
+}
+
+func runMoldsGet(cmd *cobra.Command, args []string) error {
+	slug := args[0]
+
+	client, err := api.NewClientFromConfig()
+	if err != nil {
+		return err
+	}
+
+	result, spinErr := tui.RunSpinner(fmt.Sprintf("Loading mold %q...", slug), func() (any, error) {
+		return client.GetMold(context.Background(), slug)
+	})
+	if spinErr != nil {
+		return fmt.Errorf("get mold: %w", spinErr)
+	}
+
+	mold := result.(*api.MoldDetail)
+
+	mode := ui.DetectMode(noInteractive, outputFormat)
+	if mode == ui.ModeJSON {
+		return ui.RenderJSON(mold)
+	}
+	if mode == ui.ModeYAML {
+		return ui.RenderYAML(mold)
+	}
+
+	// Build inputs section
+	inputFields := make([]tui.Field, len(mold.Inputs))
+	for i, inp := range mold.Inputs {
+		req := ""
+		if inp.Required {
+			req = " (required)"
+		}
+		def := ""
+		if inp.Default != "" {
+			def = fmt.Sprintf("  default: %s", tui.MutedStyle.Render(inp.Default))
+		}
+		inputFields[i] = tui.Field{
+			Label: inp.Name,
+			Value: fmt.Sprintf("%s%s%s  %s", inp.Type, req, def, tui.MutedStyle.Render(inp.Description)),
+		}
+	}
+
+	// Build steps section
+	stepFields := make([]tui.Field, len(mold.Steps))
+	for i, s := range mold.Steps {
+		stepFields[i] = tui.Field{
+			Label: fmt.Sprintf("Step %d", i+1),
+			Value: fmt.Sprintf("%s  %s", s.Name, tui.MutedStyle.Render(s.Action)),
+		}
+	}
+
+	sections := []tui.DetailSection{
+		{
+			Fields: []tui.Field{
+				{Label: "Name", Value: mold.Name},
+				{Label: "Slug", Value: mold.Slug},
+				{Label: "Version", Value: mold.Version},
+				{Label: "Description", Value: mold.Description},
+			},
+		},
+	}
+
+	if len(inputFields) > 0 {
+		sections = append(sections, tui.DetailSection{
+			Title:  fmt.Sprintf("Inputs (%d)", len(mold.Inputs)),
+			Fields: inputFields,
+		})
+	}
+
+	if len(stepFields) > 0 {
+		sections = append(sections, tui.DetailSection{
+			Title:  fmt.Sprintf("Steps (%d)", len(mold.Steps)),
+			Fields: stepFields,
+		})
+	}
+
+	fmt.Println(tui.RenderDetail(mold.Name, sections))
+	return nil
+}
+
+// ─── Legacy table helpers ────────────────────────────────────────────────────
+
+func outputRunsTable(runs []legacyForgeRun) error {
 	if len(runs) == 0 {
 		fmt.Println("No runs found")
 		return nil
@@ -185,10 +340,7 @@ func outputRunsTable(runs []ForgeRun) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer w.Flush()
 
-	// Header
 	fmt.Fprintln(w, "ID\tMOLD ID\tSTATUS\tCREATED BY\tCREATED AT")
-
-	// Rows
 	for _, run := range runs {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			run.ID,
@@ -198,11 +350,10 @@ func outputRunsTable(runs []ForgeRun) error {
 			formatTime(run.CreatedAt),
 		)
 	}
-
 	return nil
 }
 
-func outputRunDetails(run ForgeRun) error {
+func outputRunDetails(run legacyForgeRun) error {
 	fmt.Printf("ID:              %s\n", run.ID)
 	fmt.Printf("Mold ID:         %s\n", run.MoldID)
 	fmt.Printf("Status:          %s\n", formatStatus(run.Status))
@@ -230,11 +381,11 @@ func outputRunDetails(run ForgeRun) error {
 func formatStatus(status string) string {
 	statusIcons := map[string]string{
 		"pending":     "⏳",
-		"executing":   "▶️",
+		"executing":   "▶",
 		"completed":   "✓",
 		"failed":      "✗",
 		"cancelled":   "⊘",
-		"rolled_back": "↩️",
+		"rolled_back": "↩",
 	}
 
 	icon, ok := statusIcons[status]
@@ -261,6 +412,5 @@ func formatTime(t time.Time) string {
 	if diff < 7*24*time.Hour {
 		return fmt.Sprintf("%dd ago", int(diff.Hours()/24))
 	}
-
 	return t.Format("2006-01-02")
 }

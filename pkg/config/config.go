@@ -141,14 +141,31 @@ func (c *Config) IsAuthenticated() bool {
 	return profile.Auth != nil && profile.Auth.AccessToken != ""
 }
 
-// IsTokenExpired checks if the access token is expired
+// IsPATAuth returns true if the current profile uses a Personal Access Token
+func (c *Config) IsPATAuth() bool {
+	profile, err := c.GetCurrentProfile()
+	if err != nil {
+		return false
+	}
+	return profile != nil && profile.Auth != nil && profile.Auth.ProviderType == "pat"
+}
+
+// IsTokenExpired checks if the access token is expired.
+// PAT tokens never expire like JWTs, so always return false for PAT auth.
 func (c *Config) IsTokenExpired() bool {
+	if c.IsPATAuth() {
+		return false
+	}
 	profile, err := c.GetCurrentProfile()
 	if err != nil {
 		return true
 	}
 	if profile.Auth == nil {
 		return true
+	}
+	// Zero time means no expiry set (treat as non-expired)
+	if profile.Auth.ExpiresAt.IsZero() {
+		return false
 	}
 	return time.Now().After(profile.Auth.ExpiresAt)
 }
