@@ -1,0 +1,269 @@
+name: Release - Build & Publish CLI
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.2.3)'
+        required: true
+        type: string
+
+env:
+  GO_VERSION: '1.25.1'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  # ─── Build cross-platform binaries ─────────────────────────────────────────
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            artifact: shoehorn_linux_amd64
+          - goos: linux
+            goarch: arm64
+            artifact: shoehorn_linux_arm64
+          - goos: darwin
+            goarch: amd64
+            artifact: shoehorn_darwin_amd64
+          - goos: darwin
+            goarch: arm64
+            artifact: shoehorn_darwin_arm64
+          - goos: windows
+            goarch: amd64
+            artifact: shoehorn_windows_amd64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_TAG#v}"
+          else
+            VERSION="${REF_NAME#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building version: ${VERSION}"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION}" \
+            -o "${{ matrix.artifact }}" \
+            ./cmd/shoehorn
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          retention-days: 1
+
+  # ─── Checksums ─────────────────────────────────────────────────────────────
+  checksums:
+    name: Generate Checksums
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 5
+
+    steps:
+      - name: Download all binaries
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd binaries
+          sha256sum shoehorn_* > checksums.txt
+          echo "Checksums:"
+          cat checksums.txt
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: checksums
+          path: binaries/checksums.txt
+          retention-days: 1
+
+  # ─── GitHub Release ─────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build, checksums]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag and version
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$([[ "$TAG" == *-* ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag if workflow_dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Download all binaries
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh release-assets/
+
+      - name: Generate release notes
+        id: notes
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          cat > release-notes.md <<EOF
+          # Shoehorn CLI ${TAG}
+
+          Command-line interface for the Shoehorn Internal Developer Portal.
+
+          ## Installation
+
+          Download the binary for your platform, make it executable, and add to your PATH.
+
+          ### Linux / macOS
+
+          \`\`\`bash
+          # Linux (amd64)
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_amd64 -o shoehorn
+          chmod +x shoehorn
+          sudo mv shoehorn /usr/local/bin/
+
+          # Linux (arm64)
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_arm64 -o shoehorn
+          chmod +x shoehorn
+          sudo mv shoehorn /usr/local/bin/
+
+          # macOS (Apple Silicon)
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_arm64 -o shoehorn
+          chmod +x shoehorn
+          sudo mv shoehorn /usr/local/bin/
+
+          # macOS (Intel)
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_amd64 -o shoehorn
+          chmod +x shoehorn
+          sudo mv shoehorn /usr/local/bin/
+          \`\`\`
+
+          ### Windows
+
+          Download \`shoehorn_windows_amd64.exe\`, rename it to \`shoehorn.exe\`, and add its directory to your PATH.
+
+          ## Quick Start
+
+          \`\`\`bash
+          # Authenticate with a Personal Access Token
+          shoehorn auth login --server https://your-shoehorn.dev --token shp_xxx
+
+          # Explore the catalog
+          shoehorn get entities
+          shoehorn search "payment"
+          shoehorn whoami
+          \`\`\`
+
+          ## Verify integrity
+
+          \`\`\`bash
+          sha256sum -c checksums.txt
+          \`\`\`
+
+          ## Downloads
+
+          | Platform | Architecture | File |
+          |----------|-------------|------|
+          | Linux | amd64 | \`shoehorn_linux_amd64\` |
+          | Linux | arm64 | \`shoehorn_linux_arm64\` |
+          | macOS | arm64 (Apple Silicon) | \`shoehorn_darwin_arm64\` |
+          | macOS | amd64 (Intel) | \`shoehorn_darwin_amd64\` |
+          | Windows | amd64 | \`shoehorn_windows_amd64.exe\` |
+          EOF
+
+          echo "Release notes written"
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1
+        with:
+          tag: ${{ steps.meta.outputs.tag }}
+          name: Shoehorn CLI ${{ steps.meta.outputs.tag }}
+          bodyFile: release-notes.md
+          artifacts: |
+            release-assets/shoehorn_linux_amd64
+            release-assets/shoehorn_linux_arm64
+            release-assets/shoehorn_darwin_amd64
+            release-assets/shoehorn_darwin_arm64
+            release-assets/shoehorn_windows_amd64.exe
+            release-assets/checksums.txt
+          artifactContentType: application/octet-stream
+          allowUpdates: true
+          artifactErrorsFailBuild: true
+          draft: false
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          generateReleaseNotes: false
+          token: ${{ secrets.GITHUB_TOKEN }}
