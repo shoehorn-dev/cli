@@ -41,7 +41,7 @@ func runGetScorecard(cmd *cobra.Command, args []string) error {
 
 	sc := result.(*api.Scorecard)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(sc)
 	}
@@ -65,32 +65,49 @@ func runGetScorecard(cmd *cobra.Command, args []string) error {
 
 	// Checks table
 	if len(sc.Checks) > 0 {
-		cols := []table.Column{
-			{Title: "Check", Width: 36},
-			{Title: "Status", Width: 10},
-			{Title: "Weight", Width: 8},
-			{Title: "Message", Width: 40},
-		}
-
-		rows := make([]table.Row, len(sc.Checks))
+		colNames := []string{"Check", "Status", "Weight", "Message"}
+		rows := make([][]string, len(sc.Checks))
 		for i, ch := range sc.Checks {
-			status := tui.SuccessStyle.Render("✓ pass")
+			status := "pass"
 			if !ch.Passed {
-				status = tui.ErrorStyle.Render("✗ fail")
+				status = "FAIL"
 			}
 			msg := ch.Message
-			if len(msg) > 38 {
-				msg = msg[:38] + "…"
+			if len(msg) > 60 {
+				msg = msg[:60] + "…"
 			}
-			rows[i] = table.Row{ch.Name, strings.TrimSpace(status), fmt.Sprintf("%d", ch.Weight), msg}
+			rows[i] = []string{ch.Name, status, fmt.Sprintf("%d", ch.Weight), msg}
 		}
 
-		_, err = tui.RunTable(tui.TableConfig{
-			Title:   fmt.Sprintf("Checks (%d)", len(sc.Checks)),
-			Columns: cols,
-			Rows:    rows,
-		})
-		return err
+		if mode == ui.ModeInteractive {
+			tuiCols := []table.Column{
+				{Title: "Check", Width: 36},
+				{Title: "Status", Width: 10},
+				{Title: "Weight", Width: 8},
+				{Title: "Message", Width: 40},
+			}
+			tuiRows := make([]table.Row, len(sc.Checks))
+			for i, ch := range sc.Checks {
+				status := tui.SuccessStyle.Render("✓ pass")
+				if !ch.Passed {
+					status = tui.ErrorStyle.Render("✗ fail")
+				}
+				msg := ch.Message
+				if len(msg) > 38 {
+					msg = msg[:38] + "…"
+				}
+				tuiRows[i] = table.Row{ch.Name, strings.TrimSpace(status), fmt.Sprintf("%d", ch.Weight), msg}
+			}
+			_, err = tui.RunTable(tui.TableConfig{
+				Title:   fmt.Sprintf("Checks (%d)", len(sc.Checks)),
+				Columns: tuiCols,
+				Rows:    tuiRows,
+			})
+			return err
+		}
+
+		fmt.Println()
+		ui.RenderTable(colNames, rows)
 	}
 
 	return nil

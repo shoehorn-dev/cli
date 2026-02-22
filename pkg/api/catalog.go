@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 // ─── /me ────────────────────────────────────────────────────────────────────
@@ -19,13 +21,38 @@ type MeResponse struct {
 	Teams    []string `json:"teams"`
 }
 
+// meAPIResponse matches the actual API JSON shape for /me
+type meAPIResponse struct {
+	ID        string   `json:"id"`
+	Email     string   `json:"email"`
+	Name      string   `json:"name"`
+	FirstName string   `json:"firstName"`
+	LastName  string   `json:"lastName"`
+	Tenant    string   `json:"tenant"`
+	Roles     []string `json:"roles"`
+	Groups    []string `json:"groups"`
+	Teams     []string `json:"teams"`
+}
+
 // GetMe fetches the current user's profile
 func (c *Client) GetMe(ctx context.Context) (*MeResponse, error) {
-	var resp MeResponse
-	if err := c.Get(ctx, "/api/v1/me", &resp); err != nil {
+	var raw meAPIResponse
+	if err := c.Get(ctx, "/api/v1/me", &raw); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+	name := raw.Name
+	if name == "" {
+		name = strings.TrimSpace(raw.FirstName + " " + raw.LastName)
+	}
+	return &MeResponse{
+		ID:       raw.ID,
+		Email:    raw.Email,
+		Name:     name,
+		TenantID: raw.Tenant,
+		Roles:    raw.Roles,
+		Groups:   raw.Groups,
+		Teams:    raw.Teams,
+	}, nil
 }
 
 // ─── Entities ────────────────────────────────────────────────────────────────
@@ -91,11 +118,54 @@ type ListEntitiesOpts struct {
 	Owner  string
 }
 
-// EntitiesResponse is the paginated response from /entities
-type EntitiesResponse struct {
-	Entities   []Entity `json:"entities"`
-	TotalCount int      `json:"total_count"`
-	NextCursor string   `json:"next_cursor"`
+// entityOwnerRef matches the API owner array element: [{"id":"team-slug","type":"team"}]
+type entityOwnerRef struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+// entityServiceInfo matches the API service block: {"id":"...", "name":"...", "type":"..."}
+type entityServiceInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// entityAPIItem matches a single entity from the API response
+type entityAPIItem struct {
+	Service     entityServiceInfo `json:"service"`
+	Owner       json.RawMessage   `json:"owner"`
+	Description string            `json:"description"`
+	Tags        []string          `json:"tags"`
+	Lifecycle   string            `json:"lifecycle"`
+	Links       []EntityLink      `json:"links"`
+}
+
+// entitiesAPIResponse matches the actual API paginated response
+type entitiesAPIResponse struct {
+	Entities []entityAPIItem `json:"entities"`
+	Page     struct {
+		Total      int    `json:"total"`
+		NextCursor string `json:"nextCursor"`
+	} `json:"page"`
+}
+
+// parseOwner extracts the first owner ID from the owner field.
+// The API returns owner as an array of objects: [{"id":"team-slug","type":"team"}]
+func parseOwner(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var owners []entityOwnerRef
+	if err := json.Unmarshal(raw, &owners); err == nil && len(owners) > 0 {
+		return owners[0].ID
+	}
+	// Fallback: try as a plain string
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return ""
 }
 
 // ListEntities returns all entities matching the given filters (handles pagination)
@@ -114,26 +184,67 @@ func (c *Client) ListEntities(ctx context.Context, opts ListEntitiesOpts) ([]*En
 
 	path := "/api/v1/entities?" + q.Encode()
 
-	var resp EntitiesResponse
+	var resp entitiesAPIResponse
 	if err := c.Get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
 
 	entities := make([]*Entity, len(resp.Entities))
-	for i := range resp.Entities {
-		e := resp.Entities[i]
-		entities[i] = &e
+	for i, raw := range resp.Entities {
+		entities[i] = &Entity{
+			ID:          raw.Service.ID,
+			Name:        raw.Service.Name,
+			Slug:        raw.Service.ID,
+			Type:        raw.Service.Type,
+			Owner:       parseOwner(raw.Owner),
+			Description: raw.Description,
+			Tags:        raw.Tags,
+		}
 	}
 	return entities, nil
 }
 
+// entityDetailAPIResponse matches the single entity API response
+type entityDetailAPIResponse struct {
+	Service     entityServiceInfo  `json:"service"`
+	Owner       json.RawMessage    `json:"owner"`
+	Description string             `json:"description"`
+	Tags        []string           `json:"tags"`
+	Lifecycle   string             `json:"lifecycle"`
+	Links       []entityDetailLink `json:"links"`
+}
+
+type entityDetailLink struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Icon string `json:"icon"`
+}
+
 // GetEntity fetches a single entity by ID or slug
 func (c *Client) GetEntity(ctx context.Context, id string) (*EntityDetail, error) {
-	var resp EntityDetail
-	if err := c.Get(ctx, "/api/v1/entities/"+id, &resp); err != nil {
+	var raw entityDetailAPIResponse
+	if err := c.Get(ctx, "/api/v1/entities/"+id, &raw); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+
+	links := make([]EntityLink, len(raw.Links))
+	for i, l := range raw.Links {
+		links[i] = EntityLink{Title: l.Name, URL: l.URL, Icon: l.Icon}
+	}
+
+	return &EntityDetail{
+		Entity: Entity{
+			ID:          raw.Service.ID,
+			Name:        raw.Service.Name,
+			Slug:        raw.Service.ID,
+			Type:        raw.Service.Type,
+			Owner:       parseOwner(raw.Owner),
+			Description: raw.Description,
+			Tags:        raw.Tags,
+		},
+		Links:     links,
+		Lifecycle: raw.Lifecycle,
+	}, nil
 }
 
 // GetEntityResources fetches an entity's associated resources
@@ -181,11 +292,11 @@ func (c *Client) GetEntityChangelog(ctx context.Context, id string) ([]*Changelo
 
 // Scorecard represents an entity's scorecard result
 type Scorecard struct {
-	Score      int             `json:"score"`
-	Grade      string          `json:"grade"`
-	MaxScore   int             `json:"max_score"`
-	Checks     []ScorecardCheck `json:"checks"`
-	UpdatedAt  string          `json:"updated_at"`
+	Score     int              `json:"score"`
+	Grade     string           `json:"grade"`
+	MaxScore  int              `json:"max_score"`
+	Checks    []ScorecardCheck `json:"checks"`
+	UpdatedAt string           `json:"updated_at"`
 }
 
 // ScorecardCheck is a single check in a scorecard
@@ -281,32 +392,64 @@ type UserDetail struct {
 	Roles  []string `json:"roles"`
 }
 
-// UsersResponse is the response from /users
-type UsersResponse struct {
-	Users []User `json:"users"`
+// userAPIItem matches the actual API user JSON shape
+type userAPIItem struct {
+	ID        string   `json:"id"`
+	Email     string   `json:"email"`
+	Username  string   `json:"username"`
+	FirstName string   `json:"firstName"`
+	LastName  string   `json:"lastName"`
+	Groups    []string `json:"groups"`
+	Teams     []string `json:"teams"`
+	Roles     []string `json:"roles"`
+}
+
+// usersAPIResponse matches the actual API response for /users
+type usersAPIResponse struct {
+	Items []userAPIItem `json:"items"`
 }
 
 // ListUsers returns all users in the directory
 func (c *Client) ListUsers(ctx context.Context) ([]*User, error) {
-	var resp UsersResponse
+	var resp usersAPIResponse
 	if err := c.Get(ctx, "/api/v1/users", &resp); err != nil {
 		return nil, err
 	}
-	users := make([]*User, len(resp.Users))
-	for i := range resp.Users {
-		u := resp.Users[i]
-		users[i] = &u
+	users := make([]*User, len(resp.Items))
+	for i, u := range resp.Items {
+		name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+		if name == "" {
+			name = u.Username
+		}
+		users[i] = &User{
+			ID:    u.ID,
+			Email: u.Email,
+			Name:  name,
+		}
 	}
 	return users, nil
 }
 
 // GetUser fetches a single user by ID
 func (c *Client) GetUser(ctx context.Context, id string) (*UserDetail, error) {
-	var resp UserDetail
-	if err := c.Get(ctx, "/api/v1/users/"+id, &resp); err != nil {
+	var raw userAPIItem
+	if err := c.Get(ctx, "/api/v1/users/"+id, &raw); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+	name := strings.TrimSpace(raw.FirstName + " " + raw.LastName)
+	if name == "" {
+		name = raw.Username
+	}
+	return &UserDetail{
+		User: User{
+			ID:    raw.ID,
+			Email: raw.Email,
+			Name:  name,
+		},
+		Groups: raw.Groups,
+		Teams:  raw.Teams,
+		Roles:  raw.Roles,
+	}, nil
 }
 
 // ─── Groups ──────────────────────────────────────────────────────────────────
@@ -323,9 +466,17 @@ type Role struct {
 	Description string `json:"description"`
 }
 
-// GroupsResponse is the response from /groups
-type GroupsResponse struct {
-	Groups []Group `json:"groups"`
+// groupAPIItem matches the actual API group JSON shape
+type groupAPIItem struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	MemberCount int    `json:"memberCount"`
+	Roles       []Role `json:"roles"`
+}
+
+// groupsAPIResponse matches the actual API response for /groups
+type groupsAPIResponse struct {
+	Items []groupAPIItem `json:"items"`
 }
 
 // RolesResponse is the response from /groups/{name}/roles
@@ -335,14 +486,16 @@ type RolesResponse struct {
 
 // ListGroups returns all groups
 func (c *Client) ListGroups(ctx context.Context) ([]*Group, error) {
-	var resp GroupsResponse
+	var resp groupsAPIResponse
 	if err := c.Get(ctx, "/api/v1/groups", &resp); err != nil {
 		return nil, err
 	}
-	groups := make([]*Group, len(resp.Groups))
-	for i := range resp.Groups {
-		g := resp.Groups[i]
-		groups[i] = &g
+	groups := make([]*Group, len(resp.Items))
+	for i, g := range resp.Items {
+		groups[i] = &Group{
+			Name:      g.Name,
+			RoleCount: len(g.Roles),
+		}
 	}
 	return groups, nil
 }
@@ -365,11 +518,11 @@ func (c *Client) GetGroupRoles(ctx context.Context, groupName string) ([]*Role, 
 
 // SearchHit is a single search result item
 type SearchHit struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Owner       string `json:"owner"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Type        string  `json:"type"`
+	Description string  `json:"description"`
+	Owner       string  `json:"owner"`
 	Score       float64 `json:"score"`
 }
 
@@ -379,15 +532,47 @@ type SearchResult struct {
 	TotalCount int         `json:"total_count"`
 }
 
+// searchAPIResult matches a single result from the actual API
+type searchAPIResult struct {
+	ID          string  `json:"id"`
+	Type        string  `json:"type"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Score       float64 `json:"score"`
+}
+
+// searchAPIResponse matches the actual API response for /search
+type searchAPIResponse struct {
+	Results []searchAPIResult `json:"results"`
+	Page    struct {
+		Total int `json:"total"`
+	} `json:"page"`
+}
+
 // Search performs a full-text search across entities
 func (c *Client) Search(ctx context.Context, query string) (*SearchResult, error) {
 	q := url.Values{}
 	q.Set("q", query)
-	var resp SearchResult
+	var resp searchAPIResponse
 	if err := c.Get(ctx, "/api/v1/search?"+q.Encode(), &resp); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+
+	hits := make([]SearchHit, len(resp.Results))
+	for i, r := range resp.Results {
+		hits[i] = SearchHit{
+			ID:          r.ID,
+			Name:        r.Title,
+			Type:        r.Type,
+			Description: r.Description,
+			Score:       r.Score,
+		}
+	}
+
+	return &SearchResult{
+		Hits:       hits,
+		TotalCount: resp.Page.Total,
+	}, nil
 }
 
 // ─── K8s ─────────────────────────────────────────────────────────────────────

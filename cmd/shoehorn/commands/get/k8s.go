@@ -38,7 +38,7 @@ func runGetK8s(cmd *cobra.Command, args []string) error {
 
 	agents := result.([]*api.K8sAgent)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(agents)
 	}
@@ -46,24 +46,33 @@ func runGetK8s(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(agents)
 	}
 
-	cols := []table.Column{
-		{Title: "Cluster", Width: 30},
-		{Title: "Status", Width: 14},
-		{Title: "Version", Width: 14},
-		{Title: "Namespace", Width: 20},
-		{Title: "Last Seen", Width: 20},
-	}
-
-	rows := make([]table.Row, len(agents))
+	colNames := []string{"Cluster", "Status", "Version", "Namespace", "Last Seen"}
+	rows := make([][]string, len(agents))
 	for i, a := range agents {
-		status := tui.StatusColor(a.Status).Render(a.Status)
-		rows[i] = table.Row{a.ClusterName, status, a.Version, a.Namespace, a.LastSeen}
+		rows[i] = []string{a.ClusterName, a.Status, a.Version, a.Namespace, a.LastSeen}
 	}
 
-	_, err = tui.RunTable(tui.TableConfig{
-		Title:   fmt.Sprintf("Kubernetes Agents  (%d)", len(agents)),
-		Columns: cols,
-		Rows:    rows,
-	})
-	return err
+	if mode == ui.ModeInteractive {
+		tuiCols := []table.Column{
+			{Title: "Cluster", Width: 30},
+			{Title: "Status", Width: 14},
+			{Title: "Version", Width: 14},
+			{Title: "Namespace", Width: 20},
+			{Title: "Last Seen", Width: 20},
+		}
+		tuiRows := make([]table.Row, len(agents))
+		for j, a := range agents {
+			status := tui.StatusColor(a.Status).Render(a.Status)
+			tuiRows[j] = table.Row{a.ClusterName, status, a.Version, a.Namespace, a.LastSeen}
+		}
+		_, err = tui.RunTable(tui.TableConfig{
+			Title:   fmt.Sprintf("Kubernetes Agents  (%d)", len(agents)),
+			Columns: tuiCols,
+			Rows:    tuiRows,
+		})
+		return err
+	}
+
+	ui.RenderTable(colNames, rows)
+	return nil
 }

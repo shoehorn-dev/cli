@@ -46,7 +46,7 @@ func runGetUsers(cmd *cobra.Command, args []string) error {
 
 	users := result.([]*api.User)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(users)
 	}
@@ -54,23 +54,32 @@ func runGetUsers(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(users)
 	}
 
-	cols := []table.Column{
-		{Title: "Name", Width: 28},
-		{Title: "Email", Width: 36},
-		{Title: "ID", Width: 36},
-	}
-
-	rows := make([]table.Row, len(users))
+	colNames := []string{"Name", "Email", "ID"}
+	rows := make([][]string, len(users))
 	for i, u := range users {
-		rows[i] = table.Row{u.Name, u.Email, u.ID}
+		rows[i] = []string{u.Name, u.Email, u.ID}
 	}
 
-	_, err = tui.RunTable(tui.TableConfig{
-		Title:   fmt.Sprintf("Users  (%d)", len(users)),
-		Columns: cols,
-		Rows:    rows,
-	})
-	return err
+	if mode == ui.ModeInteractive {
+		tuiCols := []table.Column{
+			{Title: "Name", Width: 28},
+			{Title: "Email", Width: 36},
+			{Title: "ID", Width: 36},
+		}
+		tuiRows := make([]table.Row, len(rows))
+		for i, r := range rows {
+			tuiRows[i] = table.Row(r)
+		}
+		_, err = tui.RunTable(tui.TableConfig{
+			Title:   fmt.Sprintf("Users  (%d)", len(users)),
+			Columns: tuiCols,
+			Rows:    tuiRows,
+		})
+		return err
+	}
+
+	ui.RenderTable(colNames, rows)
+	return nil
 }
 
 func runGetUser(cmd *cobra.Command, args []string) error {
@@ -90,7 +99,7 @@ func runGetUser(cmd *cobra.Command, args []string) error {
 
 	user := result.(*api.UserDetail)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(user)
 	}

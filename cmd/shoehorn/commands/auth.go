@@ -122,10 +122,10 @@ func runLoginWithPAT(server, token string) error {
 	// Success panel
 	body := fmt.Sprintf(
 		"%s  %s\n%s  %s\n%s  %s\n%s  %s",
-		tui.LabelStyle.Render("Name"),    me.Name,
-		tui.LabelStyle.Render("Email"),   me.Email,
-		tui.LabelStyle.Render("Tenant"),  me.TenantID,
-		tui.LabelStyle.Render("Server"),  server,
+		tui.LabelStyle.Render("Name"), me.Name,
+		tui.LabelStyle.Render("Email"), me.Email,
+		tui.LabelStyle.Render("Tenant"), me.TenantID,
+		tui.LabelStyle.Render("Server"), server,
 	)
 	fmt.Println(tui.SuccessBox("Authenticated with PAT", body))
 	return nil

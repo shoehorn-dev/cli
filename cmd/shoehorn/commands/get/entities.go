@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	entityType   string
-	entityOwner  string
+	entityType    string
+	entityOwner   string
 	showScorecard bool
 )
 
@@ -62,7 +62,7 @@ func runGetEntities(cmd *cobra.Command, args []string) error {
 
 	entities := result.([]*api.Entity)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(entities)
 	}
@@ -70,36 +70,44 @@ func runGetEntities(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(entities)
 	}
 
-	cols := []table.Column{
-		{Title: "Name", Width: 28},
-		{Title: "Type", Width: 14},
-		{Title: "Owner", Width: 20},
-		{Title: "Description", Width: 45},
-	}
-
-	rows := make([]table.Row, len(entities))
+	colNames := []string{"Name", "Type", "Owner", "Description"}
+	rows := make([][]string, len(entities))
 	for i, e := range entities {
 		desc := e.Description
-		if len(desc) > 43 {
-			desc = desc[:43] + "…"
+		if len(desc) > 60 {
+			desc = desc[:60] + "…"
 		}
-		rows[i] = table.Row{e.Name, e.Type, e.Owner, desc}
+		rows[i] = []string{e.Name, e.Type, e.Owner, desc}
 	}
 
-	title := fmt.Sprintf("Entities  (%d)", len(entities))
-	if entityType != "" {
-		title += fmt.Sprintf("  type=%s", entityType)
-	}
-	if entityOwner != "" {
-		title += fmt.Sprintf("  owner=%s", entityOwner)
+	if mode == ui.ModeInteractive {
+		tuiCols := []table.Column{
+			{Title: "Name", Width: 28},
+			{Title: "Type", Width: 14},
+			{Title: "Owner", Width: 20},
+			{Title: "Description", Width: 45},
+		}
+		tuiRows := make([]table.Row, len(rows))
+		for i, r := range rows {
+			tuiRows[i] = table.Row(r)
+		}
+		title := fmt.Sprintf("Entities  (%d)", len(entities))
+		if entityType != "" {
+			title += fmt.Sprintf("  type=%s", entityType)
+		}
+		if entityOwner != "" {
+			title += fmt.Sprintf("  owner=%s", entityOwner)
+		}
+		_, err = tui.RunTable(tui.TableConfig{
+			Title:   title,
+			Columns: tuiCols,
+			Rows:    tuiRows,
+		})
+		return err
 	}
 
-	_, err = tui.RunTable(tui.TableConfig{
-		Title:   title,
-		Columns: cols,
-		Rows:    rows,
-	})
-	return err
+	ui.RenderTable(colNames, rows)
+	return nil
 }
 
 func runGetEntity(cmd *cobra.Command, args []string) error {
@@ -125,7 +133,7 @@ func runGetEntity(cmd *cobra.Command, args []string) error {
 
 	entity := result.(*api.EntityDetail)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(entity)
 	}

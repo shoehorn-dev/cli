@@ -45,7 +45,7 @@ func runGetGroups(cmd *cobra.Command, args []string) error {
 
 	groups := result.([]*api.Group)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(groups)
 	}
@@ -53,22 +53,31 @@ func runGetGroups(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(groups)
 	}
 
-	cols := []table.Column{
-		{Title: "Group Name", Width: 36},
-		{Title: "Roles", Width: 10},
-	}
-
-	rows := make([]table.Row, len(groups))
+	colNames := []string{"Group Name", "Roles"}
+	rows := make([][]string, len(groups))
 	for i, g := range groups {
-		rows[i] = table.Row{g.Name, fmt.Sprintf("%d", g.RoleCount)}
+		rows[i] = []string{g.Name, fmt.Sprintf("%d", g.RoleCount)}
 	}
 
-	_, err = tui.RunTable(tui.TableConfig{
-		Title:   fmt.Sprintf("Groups  (%d)", len(groups)),
-		Columns: cols,
-		Rows:    rows,
-	})
-	return err
+	if mode == ui.ModeInteractive {
+		tuiCols := []table.Column{
+			{Title: "Group Name", Width: 36},
+			{Title: "Roles", Width: 10},
+		}
+		tuiRows := make([]table.Row, len(rows))
+		for i, r := range rows {
+			tuiRows[i] = table.Row(r)
+		}
+		_, err = tui.RunTable(tui.TableConfig{
+			Title:   fmt.Sprintf("Groups  (%d)", len(groups)),
+			Columns: tuiCols,
+			Rows:    tuiRows,
+		})
+		return err
+	}
+
+	ui.RenderTable(colNames, rows)
+	return nil
 }
 
 func runGetGroup(cmd *cobra.Command, args []string) error {
@@ -88,7 +97,7 @@ func runGetGroup(cmd *cobra.Command, args []string) error {
 
 	roles := result.([]*api.Role)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(roles)
 	}

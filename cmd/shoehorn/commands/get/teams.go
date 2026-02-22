@@ -45,7 +45,7 @@ func runGetTeams(cmd *cobra.Command, args []string) error {
 
 	teams := result.([]*api.Team)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(teams)
 	}
@@ -53,28 +53,37 @@ func runGetTeams(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(teams)
 	}
 
-	cols := []table.Column{
-		{Title: "Name", Width: 28},
-		{Title: "Slug", Width: 24},
-		{Title: "Members", Width: 10},
-		{Title: "Description", Width: 40},
-	}
-
-	rows := make([]table.Row, len(teams))
+	colNames := []string{"Name", "Slug", "Members", "Description"}
+	rows := make([][]string, len(teams))
 	for i, t := range teams {
 		desc := t.Description
-		if len(desc) > 38 {
-			desc = desc[:38] + "…"
+		if len(desc) > 50 {
+			desc = desc[:50] + "…"
 		}
-		rows[i] = table.Row{t.Name, t.Slug, fmt.Sprintf("%d", t.MemberCount), desc}
+		rows[i] = []string{t.Name, t.Slug, fmt.Sprintf("%d", t.MemberCount), desc}
 	}
 
-	_, err = tui.RunTable(tui.TableConfig{
-		Title:   fmt.Sprintf("Teams  (%d)", len(teams)),
-		Columns: cols,
-		Rows:    rows,
-	})
-	return err
+	if mode == ui.ModeInteractive {
+		tuiCols := []table.Column{
+			{Title: "Name", Width: 28},
+			{Title: "Slug", Width: 24},
+			{Title: "Members", Width: 10},
+			{Title: "Description", Width: 40},
+		}
+		tuiRows := make([]table.Row, len(rows))
+		for i, r := range rows {
+			tuiRows[i] = table.Row(r)
+		}
+		_, err = tui.RunTable(tui.TableConfig{
+			Title:   fmt.Sprintf("Teams  (%d)", len(teams)),
+			Columns: tuiCols,
+			Rows:    tuiRows,
+		})
+		return err
+	}
+
+	ui.RenderTable(colNames, rows)
+	return nil
 }
 
 func runGetTeam(cmd *cobra.Command, args []string) error {
@@ -94,7 +103,7 @@ func runGetTeam(cmd *cobra.Command, args []string) error {
 
 	team := result.(*api.TeamDetail)
 
-	mode := ui.DetectMode(commands.NoInteractive(), commands.OutputFormat())
+	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(team)
 	}

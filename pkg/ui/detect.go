@@ -16,8 +16,9 @@ const (
 	ModeYAML        OutputMode = "yaml"        // YAML output
 )
 
-// DetectMode determines the appropriate output mode based on environment and flags
-func DetectMode(noInteractive bool, outputFormat string) OutputMode {
+// DetectMode determines the appropriate output mode based on environment and flags.
+// Default is plain (kubectl-style); interactive requires explicit -i flag.
+func DetectMode(interactive bool, noInteractive bool, outputFormat string) OutputMode {
 	// 1. Explicit format flag takes precedence
 	if outputFormat == "json" {
 		return ModeJSON
@@ -26,28 +27,18 @@ func DetectMode(noInteractive bool, outputFormat string) OutputMode {
 		return ModeYAML
 	}
 
-	// 2. --no-interactive flag forces plain mode
+	// 2. --no-interactive flag forces plain mode (backwards compat)
 	if noInteractive {
 		return ModePlain
 	}
 
-	// 3. Not a terminal (piped or redirected)
-	if !isTerminal() {
-		return ModePlain
+	// 3. Explicit -i flag requests interactive mode (only if TTY)
+	if interactive && isTerminal() && !isCIEnvironment() && os.Getenv("NO_COLOR") == "" {
+		return ModeInteractive
 	}
 
-	// 4. CI environment detection
-	if isCIEnvironment() {
-		return ModePlain
-	}
-
-	// 5. NO_COLOR environment variable
-	if os.Getenv("NO_COLOR") != "" {
-		return ModePlain
-	}
-
-	// Default: interactive TUI
-	return ModeInteractive
+	// 4. Default: plain column output
+	return ModePlain
 }
 
 // IsInteractive returns true if the mode supports interactive features

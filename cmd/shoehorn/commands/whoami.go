@@ -37,7 +37,7 @@ func runWhoami(cmd *cobra.Command, args []string) error {
 
 	me := result.(*api.MeResponse)
 
-	mode := ui.DetectMode(noInteractive, outputFormat)
+	mode := ui.DetectMode(interactive, noInteractive, outputFormat)
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(me)
 	}

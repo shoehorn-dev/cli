@@ -129,7 +129,7 @@ func runListRuns(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list runs: %w", err)
 	}
 
-	mode := ui.DetectMode(noInteractive, outputFormat)
+	mode := ui.DetectMode(interactive, noInteractive, outputFormat)
 	switch mode {
 	case ui.ModeJSON:
 		return ui.RenderJSON(response)
@@ -154,7 +154,7 @@ func runGetRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get run: %w", err)
 	}
 
-	mode := ui.DetectMode(noInteractive, outputFormat)
+	mode := ui.DetectMode(interactive, noInteractive, outputFormat)
 	switch mode {
 	case ui.ModeJSON:
 		return ui.RenderJSON(run)
@@ -192,9 +192,9 @@ func runCreateRun(cmd *cobra.Command, args []string) error {
 
 	body := fmt.Sprintf(
 		"%s  %s\n%s  %s\n%s  %s",
-		tui.LabelStyle.Render("Run ID"),    run.ID,
-		tui.LabelStyle.Render("Mold"),      moldSlug,
-		tui.LabelStyle.Render("Status"),    tui.StatusColor(run.Status).Render(run.Status),
+		tui.LabelStyle.Render("Run ID"), run.ID,
+		tui.LabelStyle.Render("Mold"), moldSlug,
+		tui.LabelStyle.Render("Status"), tui.StatusColor(run.Status).Render(run.Status),
 	)
 	fmt.Println(tui.SuccessBox("Run Created", body))
 	return nil
@@ -217,7 +217,7 @@ func runMoldsList(cmd *cobra.Command, args []string) error {
 
 	molds := result.([]*api.Mold)
 
-	mode := ui.DetectMode(noInteractive, outputFormat)
+	mode := ui.DetectMode(interactive, noInteractive, outputFormat)
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(molds)
 	}
@@ -225,28 +225,37 @@ func runMoldsList(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(molds)
 	}
 
-	cols := []table.Column{
-		{Title: "Name", Width: 28},
-		{Title: "Slug", Width: 24},
-		{Title: "Version", Width: 10},
-		{Title: "Description", Width: 40},
-	}
-
-	rows := make([]table.Row, len(molds))
+	colNames := []string{"Name", "Slug", "Version", "Description"}
+	rows := make([][]string, len(molds))
 	for i, m := range molds {
 		desc := m.Description
-		if len(desc) > 38 {
-			desc = desc[:38] + "…"
+		if len(desc) > 50 {
+			desc = desc[:50] + "…"
 		}
-		rows[i] = table.Row{m.Name, m.Slug, m.Version, desc}
+		rows[i] = []string{m.Name, m.Slug, m.Version, desc}
 	}
 
-	_, err = tui.RunTable(tui.TableConfig{
-		Title:   fmt.Sprintf("Molds  (%d)", len(molds)),
-		Columns: cols,
-		Rows:    rows,
-	})
-	return err
+	if mode == ui.ModeInteractive {
+		tuiCols := []table.Column{
+			{Title: "Name", Width: 28},
+			{Title: "Slug", Width: 24},
+			{Title: "Version", Width: 10},
+			{Title: "Description", Width: 40},
+		}
+		tuiRows := make([]table.Row, len(rows))
+		for i, r := range rows {
+			tuiRows[i] = table.Row(r)
+		}
+		_, err = tui.RunTable(tui.TableConfig{
+			Title:   fmt.Sprintf("Molds  (%d)", len(molds)),
+			Columns: tuiCols,
+			Rows:    tuiRows,
+		})
+		return err
+	}
+
+	ui.RenderTable(colNames, rows)
+	return nil
 }
 
 func runMoldsGet(cmd *cobra.Command, args []string) error {
@@ -266,7 +275,7 @@ func runMoldsGet(cmd *cobra.Command, args []string) error {
 
 	mold := result.(*api.MoldDetail)
 
-	mode := ui.DetectMode(noInteractive, outputFormat)
+	mode := ui.DetectMode(interactive, noInteractive, outputFormat)
 	if mode == ui.ModeJSON {
 		return ui.RenderJSON(mold)
 	}

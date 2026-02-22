@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"text/tabwriter"
 
 	"gopkg.in/yaml.v3"
 )
@@ -36,4 +38,28 @@ func RenderSuccess(message string) {
 // RenderWarning outputs a warning message to stderr
 func RenderWarning(message string) {
 	fmt.Fprintf(os.Stderr, "Warning: %s\n", message)
+}
+
+// RenderTable outputs a kubectl-style plain table with CAPS headers and tab-aligned columns.
+func RenderTable(cols []string, rows [][]string) {
+	if len(rows) == 0 {
+		fmt.Println("No resources found.")
+		return
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+
+	// Header in CAPS
+	header := make([]string, len(cols))
+	for i, c := range cols {
+		header[i] = strings.ToUpper(c)
+	}
+	fmt.Fprintln(w, strings.Join(header, "\t"))
+
+	// Rows
+	for _, row := range rows {
+		fmt.Fprintln(w, strings.Join(row, "\t"))
+	}
+
+	w.Flush()
 }

@@ -6,7 +6,7 @@ import (
 
 // ManifestValidationResult represents the validation result from the API
 type ManifestValidationResult struct {
-	Valid  bool                   `json:"valid"`
+	Valid  bool                      `json:"valid"`
 	Errors []ManifestValidationError `json:"errors"`
 }
 
@@ -26,8 +26,8 @@ type ManifestConversionRequest struct {
 // ManifestConversionResponse represents the conversion response
 type ManifestConversionResponse struct {
 	Success    bool                      `json:"success"`
-	Content    string                    `json:"content,omitempty"`    // For shoehorn/backstage
-	Mold       map[string]interface{}    `json:"mold,omitempty"`       // For mold
+	Content    string                    `json:"content,omitempty"` // For shoehorn/backstage
+	Mold       map[string]interface{}    `json:"mold,omitempty"`    // For mold
 	Format     string                    `json:"format"`
 	Validation *ManifestValidationResult `json:"validation,omitempty"`
 }
@@ -39,8 +39,8 @@ type ValidateManifestRequest struct {
 
 // ValidateManifestResponse represents the validation response
 type ValidateManifestResponse struct {
-	Valid  bool                       `json:"valid"`
-	Errors []ManifestValidationError  `json:"errors"`
+	Valid  bool                      `json:"valid"`
+	Errors []ManifestValidationError `json:"errors"`
 }
 
 // ValidateManifest validates a manifest file via the API

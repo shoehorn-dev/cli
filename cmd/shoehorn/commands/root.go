@@ -10,11 +10,15 @@ var (
 	cfgFile       string
 	profile       string
 	noInteractive bool
+	interactive   bool
 	outputFormat  string
 )
 
 // NoInteractive returns the --no-interactive flag value (for use by sub-packages)
 func NoInteractive() bool { return noInteractive }
+
+// Interactive returns true when the user explicitly requested interactive mode via -i
+func Interactive() bool { return interactive }
 
 // OutputFormat returns the --output flag value (for use by sub-packages)
 func OutputFormat() string { return outputFormat }
@@ -43,6 +47,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.shoehorn/config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&profile, "profile", "default", "authentication profile to use")
 	rootCmd.PersistentFlags().BoolVarP(&noInteractive, "no-interactive", "I", false, "disable interactive mode (force plain output)")
+	rootCmd.PersistentFlags().BoolVarP(&interactive, "interactive", "i", false, "enable interactive table mode")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format (table|json|yaml)")
 
 	// Add version command
