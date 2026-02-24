@@ -146,9 +146,6 @@ func runGetEntity(cmd *cobra.Command, args []string) error {
 		resources []*api.Resource
 		status    *api.EntityStatus
 		scorecard *api.Scorecard
-		resErr    error
-		statErr   error
-		scErr     error
 	}
 
 	fr := fetchResult{}
@@ -157,32 +154,17 @@ func runGetEntity(cmd *cobra.Command, args []string) error {
 	scCh := make(chan *api.Scorecard, 1)
 
 	go func() {
-		r, e := client.GetEntityResources(ctx, entity.ID)
-		if e != nil {
-			fr.resErr = e
-			resCh <- nil
-		} else {
-			resCh <- r
-		}
+		r, _ := client.GetEntityResources(ctx, entity.ID)
+		resCh <- r
 	}()
 	go func() {
-		s, e := client.GetEntityStatus(ctx, entity.ID)
-		if e != nil {
-			fr.statErr = e
-			statCh <- nil
-		} else {
-			statCh <- s
-		}
+		s, _ := client.GetEntityStatus(ctx, entity.ID)
+		statCh <- s
 	}()
 	if showScorecard {
 		go func() {
-			sc, e := client.GetEntityScorecard(ctx, entity.ID)
-			if e != nil {
-				fr.scErr = e
-				scCh <- nil
-			} else {
-				scCh <- sc
-			}
+			sc, _ := client.GetEntityScorecard(ctx, entity.ID)
+			scCh <- sc
 		}()
 	} else {
 		scCh <- nil

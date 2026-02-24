@@ -262,6 +262,8 @@ jobs:
             release-assets/checksums.txt
           artifactContentType: application/octet-stream
           allowUpdates: true
+          removeArtifacts: true
+          replacesArtifacts: true
           artifactErrorsFailBuild: true
           draft: false
           prerelease: ${{ steps.meta.outputs.prerelease }}
