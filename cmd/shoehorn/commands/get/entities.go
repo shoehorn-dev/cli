@@ -3,6 +3,7 @@ package get
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -152,18 +153,28 @@ func runGetEntity(cmd *cobra.Command, args []string) error {
 	resCh := make(chan []*api.Resource, 1)
 	statCh := make(chan *api.EntityStatus, 1)
 	scCh := make(chan *api.Scorecard, 1)
+	errCh := make(chan error, 3)
 
 	go func() {
-		r, _ := client.GetEntityResources(ctx, entity.ID)
+		r, err := client.GetEntityResources(ctx, entity.ID)
+		if err != nil {
+			errCh <- fmt.Errorf("get entity resources: %w", err)
+		}
 		resCh <- r
 	}()
 	go func() {
-		s, _ := client.GetEntityStatus(ctx, entity.ID)
+		s, err := client.GetEntityStatus(ctx, entity.ID)
+		if err != nil {
+			errCh <- fmt.Errorf("get entity status: %w", err)
+		}
 		statCh <- s
 	}()
 	if showScorecard {
 		go func() {
-			sc, _ := client.GetEntityScorecard(ctx, entity.ID)
+			sc, err := client.GetEntityScorecard(ctx, entity.ID)
+			if err != nil {
+				errCh <- fmt.Errorf("get entity scorecard: %w", err)
+			}
 			scCh <- sc
 		}()
 	} else {
@@ -173,6 +184,18 @@ func runGetEntity(cmd *cobra.Command, args []string) error {
 	fr.resources = <-resCh
 	fr.status = <-statCh
 	fr.scorecard = <-scCh
+	close(errCh)
+
+	var errs []string
+	for e := range errCh {
+		errs = append(errs, e.Error())
+	}
+	if len(errs) > 0 {
+		fmt.Fprintln(os.Stderr, "Warning: some details could not be loaded:")
+		for _, msg := range errs {
+			fmt.Fprintf(os.Stderr, "  - %s\n", msg)
+		}
+	}
 
 	// Build detail panel
 	mainFields := []tui.Field{

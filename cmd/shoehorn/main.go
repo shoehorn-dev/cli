@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/imbabamba/shoehorn-cli/cmd/shoehorn/commands"
@@ -18,6 +19,7 @@ func init() {
 
 func main() {
 	if err := commands.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
