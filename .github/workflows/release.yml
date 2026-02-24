@@ -244,15 +244,46 @@ jobs:
       - name: List release assets
         run: ls -lh release-assets/
 
+      - name: Generate changelog from commits
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -n 1)
+
+          if [ -n "$PREV_TAG" ]; then
+            echo "## What's Changed" > changelog.md
+            echo "" >> changelog.md
+            git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges >> changelog.md
+            echo "" >> changelog.md
+            echo "" >> changelog.md
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${TAG}" >> changelog.md
+          else
+            echo "## What's Changed" > changelog.md
+            echo "" >> changelog.md
+            echo "Initial release" >> changelog.md
+          fi
+
+          echo "Changelog:"
+          cat changelog.md
+
       - name: Generate release notes
         id: notes
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          cat > release-notes.md <<EOF
-
+          # Combine changelog + installation instructions
+          cat > release-notes.md <<HEADER
           Command-line interface for the Shoehorn Internal Developer Portal.
+
+          HEADER
+
+          cat changelog.md >> release-notes.md
+
+          cat >> release-notes.md <<EOF
 
           ## Installation
 
