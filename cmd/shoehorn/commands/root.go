@@ -6,6 +6,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is set at build time via ldflags. Defaults to "dev" for local builds.
+var Version = "dev"
+
 var (
 	cfgFile       string
 	profile       string
@@ -50,12 +53,15 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&interactive, "interactive", "i", false, "enable interactive table mode")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format (table|json|yaml)")
 
+	// Set version for cobra's built-in --version flag
+	rootCmd.Version = Version
+
 	// Add version command
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "Print the version number",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Shoehorn CLI v0.1.0")
+			fmt.Println("Shoehorn CLI " + Version)
 		},
 	})
 }
