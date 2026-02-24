@@ -251,7 +251,6 @@ jobs:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
           cat > release-notes.md <<EOF
-          # Shoehorn CLI ${TAG}
 
           Command-line interface for the Shoehorn Internal Developer Portal.
 
@@ -353,7 +352,7 @@ jobs:
 
           gh release create "${TAG}" \
             --repo "${{ github.repository }}" \
-            --title "Shoehorn CLI ${TAG}" \
+            --title "${TAG}" \
             --notes-file release-notes.md \
             ${PRERELEASE_FLAG} \
             release-assets/shoehorn_linux_amd64 \
