@@ -3,3 +3,6 @@ shoehorn.exe
 .claude/settings.local.json
 ARCHITECTURE.md
 DECOUPLING_STATUS.md
+CLAUDE.md
+.claude/agents/*
+.claude/rules/*
