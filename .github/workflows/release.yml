@@ -186,9 +186,24 @@ jobs:
 
           ## Installation
 
+          ### Homebrew (macOS / Linux)
+
+          \`\`\`bash
+          brew tap shoehorn-dev/tap
+          brew install shoehorn
+          \`\`\`
+
+          ### Mise
+
+          \`\`\`bash
+          mise use ubi:shoehorn-dev/cli
+          \`\`\`
+
+          ### Manual download
+
           Download the binary for your platform, make it executable, and add to your PATH.
 
-          ### Linux / macOS
+          #### Linux / macOS
 
           \`\`\`bash
           # Linux (amd64)
@@ -212,7 +227,7 @@ jobs:
           sudo mv shoehorn /usr/local/bin/
           \`\`\`
 
-          ### Windows
+          #### Windows
 
           Download \`shoehorn_windows_amd64.exe\`, rename it to \`shoehorn.exe\`, and add its directory to your PATH.
 
@@ -247,25 +262,208 @@ jobs:
 
           echo "Release notes written"
 
+      - name: Delete existing release if present
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          gh release delete "${TAG}" --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+
       - name: Create GitHub Release
-        uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1
-        with:
-          tag: ${{ steps.meta.outputs.tag }}
-          name: Shoehorn CLI ${{ steps.meta.outputs.tag }}
-          bodyFile: release-notes.md
-          artifacts: |
-            release-assets/shoehorn_linux_amd64
-            release-assets/shoehorn_linux_arm64
-            release-assets/shoehorn_darwin_amd64
-            release-assets/shoehorn_darwin_arm64
-            release-assets/shoehorn_windows_amd64.exe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [ "$PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --title "Shoehorn CLI ${TAG}" \
+            --notes-file release-notes.md \
+            ${PRERELEASE_FLAG} \
+            release-assets/shoehorn_linux_amd64 \
+            release-assets/shoehorn_linux_arm64 \
+            release-assets/shoehorn_darwin_amd64 \
+            release-assets/shoehorn_darwin_arm64 \
+            release-assets/shoehorn_windows_amd64.exe \
             release-assets/checksums.txt
-          artifactContentType: application/octet-stream
-          allowUpdates: true
-          removeArtifacts: true
-          replacesArtifacts: true
-          artifactErrorsFailBuild: true
-          draft: false
-          prerelease: ${{ steps.meta.outputs.prerelease }}
-          generateReleaseNotes: false
-          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Publish Homebrew Formula ────────────────────────────────────────────
+  publish-homebrew:
+    name: Publish Homebrew Formula
+    runs-on: ubuntu-latest
+    needs: release
+    timeout-minutes: 10
+
+    steps:
+      - name: Determine tag and version
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download checksums
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: checksums
+          path: .
+
+      - name: Parse checksums
+        id: sha
+        run: |
+          echo "darwin_amd64=$(grep shoehorn_darwin_amd64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "darwin_arm64=$(grep shoehorn_darwin_arm64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_amd64=$(grep shoehorn_linux_amd64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(grep shoehorn_linux_arm64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Homebrew formula
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          REPO: ${{ github.repository }}
+          SHA_DARWIN_AMD64: ${{ steps.sha.outputs.darwin_amd64 }}
+          SHA_DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
+          SHA_LINUX_AMD64: ${{ steps.sha.outputs.linux_amd64 }}
+          SHA_LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
+        run: |
+          mkdir -p Formula
+          cat > Formula/shoehorn.rb <<RUBY
+          class Shoehorn < Formula
+            desc "CLI for the Shoehorn Internal Developer Portal"
+            homepage "https://github.com/${REPO}"
+            version "${VERSION}"
+            license "Apache-2.0"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_darwin_arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
+              else
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_darwin_amd64"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_linux_arm64"
+                sha256 "${SHA_LINUX_ARM64}"
+              else
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_linux_amd64"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              binary_name = stable.url.split("/").last
+              bin.install binary_name => "shoehorn"
+            end
+
+            test do
+              assert_match "Shoehorn CLI", shell_output("#{bin}/shoehorn version")
+            end
+          end
+          RUBY
+
+          echo "Generated Formula/shoehorn.rb"
+          cat Formula/shoehorn.rb
+
+      - name: Push formula to tap repo
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/shoehorn-dev/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp Formula/shoehorn.rb tap/Formula/shoehorn.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/shoehorn.rb
+          git commit -m "Update shoehorn to ${TAG}"
+          git push origin main
+
+  # ─── Generate Winget Manifest ────────────────────────────────────────────
+  generate-winget:
+    name: Generate Winget Manifest
+    runs-on: ubuntu-latest
+    needs: release
+    timeout-minutes: 5
+
+    steps:
+      - name: Determine tag and version
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download checksums
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: checksums
+          path: .
+
+      - name: Parse Windows checksum
+        id: sha
+        run: |
+          echo "windows_amd64=$(grep shoehorn_windows_amd64.exe checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Generate winget manifest
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          REPO: ${{ github.repository }}
+          SHA_WINDOWS: ${{ steps.sha.outputs.windows_amd64 }}
+        run: |
+          cat > shoehorn.winget.yaml <<YAML
+          PackageIdentifier: Shoehorn.CLI
+          PackageVersion: "${VERSION}"
+          PackageName: Shoehorn CLI
+          Publisher: shoehorn-dev
+          License: Apache-2.0
+          ShortDescription: CLI for the Shoehorn Internal Developer Portal
+          PackageUrl: https://github.com/${REPO}
+          Installers:
+            - Architecture: x64
+              InstallerUrl: https://github.com/${REPO}/releases/download/${TAG}/shoehorn_windows_amd64.exe
+              InstallerSha256: ${SHA_WINDOWS}
+              InstallerType: portable
+              Commands:
+                - shoehorn
+          ManifestType: singleton
+          ManifestVersion: 1.6.0
+          YAML
+
+          echo "Generated shoehorn.winget.yaml"
+          cat shoehorn.winget.yaml
+
+      - name: Upload winget manifest to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          gh release upload "${TAG}" shoehorn.winget.yaml --repo "${{ github.repository }}" --clobber
