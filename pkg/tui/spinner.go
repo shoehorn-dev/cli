@@ -2,11 +2,28 @@ package tui
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
+
+// plainMode disables TUI spinners and renders plain output instead.
+// Set via SetPlainMode(true) — used by --no-interactive flag.
+var plainMode bool
+
+// SetPlainMode forces all TUI spinners to run without animation.
+// Call this when --no-interactive is set or stdout is not a TTY.
+func SetPlainMode(v bool) {
+	plainMode = v
+}
+
+// isaTTY returns true if stdout is an interactive terminal.
+func isaTTY() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
 
 // resultMsg carries the result back from the async function
 type resultMsg struct {
@@ -72,8 +89,13 @@ func (m spinnerModel) View() string {
 }
 
 // RunSpinner runs fn in the background while displaying a spinner.
-// Returns the result value and any error from fn.
+// Falls back to plain execution (no animation) when stdout is not a TTY
+// or plain mode is enabled via SetPlainMode.
 func RunSpinner(message string, fn func() (any, error)) (any, error) {
+	if plainMode || !isaTTY() {
+		fmt.Fprintf(os.Stderr, "%s\n", message)
+		return fn()
+	}
 	m := newSpinnerModel(message, fn)
 	p := tea.NewProgram(m)
 	final, err := p.Run()

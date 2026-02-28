@@ -27,13 +27,10 @@ var authCmd = &cobra.Command{
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to Shoehorn",
-	Long: `Authenticate with the Shoehorn platform.
+	Long: `Authenticate with the Shoehorn platform using a Personal Access Token.
 
-Use --token to authenticate with a Personal Access Token (recommended):
-  shoehorn auth login --server http://localhost:8080 --token shp_your_token
-
-Or use the OAuth2 device flow (requires Zitadel configuration):
-  shoehorn auth login --server http://localhost:8080`,
+Create a PAT in the Shoehorn UI under Settings > API Keys, then run:
+  shoehorn auth login --server http://localhost:8080 --token shp_your_token`,
 	RunE: runLogin,
 }
 
@@ -65,12 +62,11 @@ func init() {
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
-	serverURL = NormalizeServerURL(serverURL)
-
-	if patToken != "" {
-		return runLoginWithPAT(serverURL, patToken)
+	if patToken == "" {
+		return fmt.Errorf("a Personal Access Token is required\n\nUsage:\n  shoehorn auth login --server <url> --token <PAT>")
 	}
-	return runLoginDeviceFlow(serverURL)
+	serverURL = NormalizeServerURL(serverURL)
+	return runLoginWithPAT(serverURL, patToken)
 }
 
 // runLoginWithPAT authenticates using a Personal Access Token
@@ -128,107 +124,6 @@ func runLoginWithPAT(server, token string) error {
 		tui.LabelStyle.Render("Server"), server,
 	)
 	fmt.Println(tui.SuccessBox("Authenticated with PAT", body))
-	return nil
-}
-
-// runLoginDeviceFlow uses OAuth2 device authorization (requires Zitadel config)
-func runLoginDeviceFlow(server string) error {
-	fmt.Println("Logging in to Shoehorn...")
-
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	client := api.NewClient(server)
-	ctx := context.Background()
-
-	fmt.Println("Initiating device authorization flow...")
-	deviceResp, err := client.InitDeviceFlow(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to initiate device flow: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println("To authenticate, visit:")
-	if deviceResp.VerificationURIComplete != "" {
-		fmt.Printf("  %s\n", deviceResp.VerificationURIComplete)
-		fmt.Println()
-		fmt.Println("Or manually visit:")
-	}
-	fmt.Printf("  %s\n", deviceResp.VerificationURI)
-	fmt.Printf("  And enter code: %s\n", deviceResp.UserCode)
-	fmt.Println()
-	fmt.Printf("Code expires in %d seconds\n", deviceResp.ExpiresIn)
-	fmt.Println()
-	fmt.Println("Waiting for authentication...")
-
-	var pollResp *api.DevicePollResponse
-	interval := time.Duration(deviceResp.Interval) * time.Second
-	timeout := time.Duration(deviceResp.ExpiresIn) * time.Second
-	deadline := time.Now().Add(timeout)
-
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("authentication timeout: device code expired")
-		}
-
-		pollResp, err = client.PollDeviceFlow(ctx, deviceResp.DeviceCode)
-		if err != nil {
-			return fmt.Errorf("failed to poll device flow: %w", err)
-		}
-
-		if pollResp.AccessToken != "" {
-			break
-		}
-
-		if pollResp.Pending {
-			if pollResp.Message == "slow_down" {
-				interval *= 2
-			}
-			time.Sleep(interval)
-			continue
-		}
-
-		return fmt.Errorf("unexpected response from server: %+v", pollResp)
-	}
-
-	currentProfile := cfg.Profiles[cfg.CurrentProfile]
-	if currentProfile == nil {
-		return fmt.Errorf("current profile not found: %s", cfg.CurrentProfile)
-	}
-
-	currentProfile.Auth = &config.Auth{
-		ProviderType: "api",
-		Issuer:       server,
-		ClientID:     "shoehorn-cli",
-		AccessToken:  pollResp.AccessToken,
-		RefreshToken: pollResp.RefreshToken,
-		TokenType:    pollResp.TokenType,
-		ExpiresAt:    pollResp.ExpiresAt,
-		User: &config.User{
-			Email:    pollResp.User.Email,
-			Name:     pollResp.User.Name,
-			TenantID: pollResp.User.TenantID,
-		},
-	}
-	currentProfile.Server = server
-
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println("Authentication successful!")
-	fmt.Printf("Logged in as: %s\n", pollResp.User.Email)
-	if pollResp.User.Name != "" {
-		fmt.Printf("Name: %s\n", pollResp.User.Name)
-	}
-	if pollResp.User.TenantID != "" {
-		fmt.Printf("Tenant: %s\n", pollResp.User.TenantID)
-	}
-	fmt.Printf("Profile: %s\n", cfg.CurrentProfile)
-	fmt.Printf("Server: %s\n", server)
 	return nil
 }
 

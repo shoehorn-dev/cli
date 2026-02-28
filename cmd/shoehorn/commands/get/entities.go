@@ -71,18 +71,19 @@ func runGetEntities(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(entities)
 	}
 
-	colNames := []string{"Name", "Type", "Owner", "Description"}
+	colNames := []string{"ID", "Name", "Type", "Owner", "Description"}
 	rows := make([][]string, len(entities))
 	for i, e := range entities {
 		desc := e.Description
 		if len(desc) > 60 {
 			desc = desc[:60] + "…"
 		}
-		rows[i] = []string{e.Name, e.Type, e.Owner, desc}
+		rows[i] = []string{e.ID, e.Name, e.Type, e.Owner, desc}
 	}
 
 	if mode == ui.ModeInteractive {
 		tuiCols := []table.Column{
+			{Title: "ID", Width: 30},
 			{Title: "Name", Width: 28},
 			{Title: "Type", Width: 14},
 			{Title: "Owner", Width: 20},
@@ -129,6 +130,9 @@ func runGetEntity(cmd *cobra.Command, args []string) error {
 		return e, nil
 	})
 	if spinErr != nil {
+		if strings.Contains(spinErr.Error(), "404") {
+			return fmt.Errorf("entity %q not found.\nHint: Use the ID column from `shoehorn get entities` to look up an entity by its service ID", id)
+		}
 		return fmt.Errorf("get entity: %w", spinErr)
 	}
 

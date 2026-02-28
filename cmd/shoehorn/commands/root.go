@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/imbabamba/shoehorn-cli/pkg/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +34,11 @@ var rootCmd = &cobra.Command{
 	Long: `Shoehorn CLI provides command-line access to the Shoehorn platform.
 
 Use it to authenticate, manage workflows, and interact with the Forge service.`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if noInteractive {
+			tui.SetPlainMode(true)
+		}
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

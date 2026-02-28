@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // ─── /me ────────────────────────────────────────────────────────────────────
@@ -26,6 +28,7 @@ type meAPIResponse struct {
 	ID        string   `json:"id"`
 	Email     string   `json:"email"`
 	Name      string   `json:"name"`
+	User      string   `json:"user"` // API returns username in "user" field
 	FirstName string   `json:"firstName"`
 	LastName  string   `json:"lastName"`
 	Tenant    string   `json:"tenant"`
@@ -43,6 +46,9 @@ func (c *Client) GetMe(ctx context.Context) (*MeResponse, error) {
 	name := raw.Name
 	if name == "" {
 		name = strings.TrimSpace(raw.FirstName + " " + raw.LastName)
+	}
+	if name == "" {
+		name = raw.User
 	}
 	return &MeResponse{
 		ID:       raw.ID,
@@ -222,10 +228,13 @@ type entityDetailLink struct {
 
 // GetEntity fetches a single entity by ID or slug
 func (c *Client) GetEntity(ctx context.Context, id string) (*EntityDetail, error) {
-	var raw entityDetailAPIResponse
-	if err := c.Get(ctx, "/api/v1/entities/"+id, &raw); err != nil {
+	var wrapper struct {
+		Entity entityDetailAPIResponse `json:"entity"`
+	}
+	if err := c.Get(ctx, "/api/v1/entities/"+id, &wrapper); err != nil {
 		return nil, err
 	}
+	raw := wrapper.Entity
 
 	links := make([]EntityLink, len(raw.Links))
 	for i, l := range raw.Links {
@@ -577,31 +586,63 @@ func (c *Client) Search(ctx context.Context, query string) (*SearchResult, error
 
 // ─── K8s ─────────────────────────────────────────────────────────────────────
 
-// K8sAgent represents a connected K8s agent
+// K8sAgent represents a connected K8s agent (display model)
 type K8sAgent struct {
 	ID          string `json:"id"`
 	ClusterName string `json:"cluster_name"`
 	Status      string `json:"status"`
 	Version     string `json:"version"`
 	LastSeen    string `json:"last_seen"`
-	Namespace   string `json:"namespace"`
 }
 
-// K8sAgentsResponse is the response from /k8s/agents
-type K8sAgentsResponse struct {
-	Agents []K8sAgent `json:"agents"`
+// k8sAgentAPIItem matches the actual API JSON shape for a single agent
+type k8sAgentAPIItem struct {
+	ID            int        `json:"id"`
+	ClusterID     string     `json:"clusterId"`
+	Name          string     `json:"name"`
+	Status        string     `json:"status"`
+	OnlineStatus  string     `json:"onlineStatus"`
+	LastHeartbeat *time.Time `json:"lastHeartbeat,omitempty"`
+}
+
+// k8sAgentsAPIResponse matches the actual API response for /k8s/agents
+type k8sAgentsAPIResponse struct {
+	Agents []k8sAgentAPIItem `json:"agents"`
+}
+
+// formatLastSeen formats a time pointer as a human-readable string
+func formatLastSeen(t *time.Time) string {
+	if t == nil {
+		return "never"
+	}
+	d := time.Since(*t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
 }
 
 // ListK8sAgents returns all registered K8s agents
 func (c *Client) ListK8sAgents(ctx context.Context) ([]*K8sAgent, error) {
-	var resp K8sAgentsResponse
+	var resp k8sAgentsAPIResponse
 	if err := c.Get(ctx, "/api/v1/k8s/agents", &resp); err != nil {
 		return nil, err
 	}
 	agents := make([]*K8sAgent, len(resp.Agents))
-	for i := range resp.Agents {
-		a := resp.Agents[i]
-		agents[i] = &a
+	for i, raw := range resp.Agents {
+		agents[i] = &K8sAgent{
+			ID:          strconv.Itoa(raw.ID),
+			ClusterName: raw.ClusterID,
+			Status:      raw.OnlineStatus,
+			Version:     raw.Name,
+			LastSeen:    formatLastSeen(raw.LastHeartbeat),
+		}
 	}
 	return agents, nil
 }
