@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 )
 
 // ManifestValidationResult represents the validation result from the API
@@ -43,17 +44,31 @@ type ValidateManifestResponse struct {
 	Errors []ManifestValidationError `json:"errors"`
 }
 
-// ValidateManifest validates a manifest file via the API
+// ValidateManifest validates a manifest file via the API.
+// The validate endpoint returns 422 when validation fails (not an error - it's a valid result),
+// so we use doIgnoreStatus to always parse the response body.
 func (c *Client) ValidateManifest(ctx context.Context, content string) (*ValidateManifestResponse, error) {
 	req := ValidateManifestRequest{
 		Content: content,
 	}
 
 	var resp ValidateManifestResponse
-	if err := c.Post(ctx, "/api/v1/manifests/validate", req, &resp); err != nil {
+	statusCode, err := c.doIgnoreStatus(ctx, "POST", "/api/v1/manifests/validate", req, &resp)
+	if err != nil {
 		return nil, err
 	}
 
+	// 5xx = server error
+	if statusCode >= 500 {
+		return nil, fmt.Errorf("API server error (%d)", statusCode)
+	}
+
+	// 401/403 = auth error
+	if statusCode == 401 || statusCode == 403 {
+		return nil, fmt.Errorf("API error (%d): not authorized", statusCode)
+	}
+
+	// 2xx or 4xx with a parsed body = validation result (valid or invalid)
 	return &resp, nil
 }
 

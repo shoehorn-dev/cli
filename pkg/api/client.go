@@ -96,6 +96,48 @@ func (c *Client) do(ctx context.Context, method, path string, body, result inter
 	return nil
 }
 
+// doIgnoreStatus performs an HTTP request and decodes the body into result
+// regardless of HTTP status code. Returns the status code alongside any error.
+func (c *Client) doIgnoreStatus(ctx context.Context, method, path string, body, result interface{}) (int, error) {
+	var reqBody io.Reader
+	if body != nil {
+		jsonData, err := json.Marshal(body)
+		if err != nil {
+			return 0, fmt.Errorf("marshal request: %w", err)
+		}
+		reqBody = bytes.NewReader(jsonData)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
+	if err != nil {
+		return 0, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, fmt.Errorf("read response: %w", err)
+	}
+
+	if result != nil && len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return resp.StatusCode, fmt.Errorf("decode response: %w", err)
+		}
+	}
+
+	return resp.StatusCode, nil
+}
+
 // Get performs a GET request
 func (c *Client) Get(ctx context.Context, path string, result interface{}) error {
 	return c.do(ctx, http.MethodGet, path, nil, result)
