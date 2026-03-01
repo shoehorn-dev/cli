@@ -102,6 +102,9 @@ func RunSpinner(message string, fn func() (any, error)) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("spinner: %w", err)
 	}
-	fm := final.(spinnerModel)
+	fm, ok := final.(spinnerModel)
+	if !ok {
+		return nil, fmt.Errorf("spinner: unexpected final model type %T", final)
+	}
 	return fm.result, fm.err
 }
