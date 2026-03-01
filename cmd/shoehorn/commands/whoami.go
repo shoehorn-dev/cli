@@ -34,7 +34,10 @@ func runWhoami(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("fetch user: %w", spinErr)
 	}
 
-	me := result.(*api.MeResponse)
+	me, ok := result.(*api.MeResponse)
+	if !ok {
+		return fmt.Errorf("unexpected response type %T from GetMe", result)
+	}
 
 	mode := ui.DetectMode(interactive, noInteractive, outputFormat)
 	if mode == ui.ModeJSON {
