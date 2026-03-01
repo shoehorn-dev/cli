@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/imbabamba/shoehorn-cli/pkg/api"
 	"github.com/imbabamba/shoehorn-cli/pkg/tui"
@@ -45,33 +44,12 @@ func runWhoami(cmd *cobra.Command, args []string) error {
 		return ui.RenderYAML(me)
 	}
 
-	roles := strings.Join(me.Roles, ", ")
-	groups := strings.Join(me.Groups, ", ")
-	teams := strings.Join(me.Teams, ", ")
-	if roles == "" {
-		roles = "—"
-	}
-	if groups == "" {
-		groups = "—"
-	}
-	if teams == "" {
-		teams = "—"
-	}
-
 	panel := tui.RenderDetail(me.Name, []tui.DetailSection{
 		{
 			Fields: []tui.Field{
 				{Label: "Email", Value: me.Email},
 				{Label: "Tenant", Value: me.TenantID},
 				{Label: "User ID", Value: me.ID},
-			},
-		},
-		{
-			Title: "Access",
-			Fields: []tui.Field{
-				{Label: "Roles", Value: roles},
-				{Label: "Groups", Value: groups},
-				{Label: "Teams", Value: teams},
 			},
 		},
 	})
