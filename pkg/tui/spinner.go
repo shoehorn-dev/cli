@@ -20,8 +20,8 @@ func SetPlainMode(v bool) {
 	plainMode = v
 }
 
-// isaTTY returns true if stdout is an interactive terminal.
-func isaTTY() bool {
+// isTTY returns true if stdout is an interactive terminal.
+func isTTY() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
@@ -92,7 +92,7 @@ func (m spinnerModel) View() string {
 // Falls back to plain execution (no animation) when stdout is not a TTY
 // or plain mode is enabled via SetPlainMode.
 func RunSpinner(message string, fn func() (any, error)) (any, error) {
-	if plainMode || !isaTTY() {
+	if plainMode || !isTTY() {
 		fmt.Fprintf(os.Stderr, "%s\n", message)
 		return fn()
 	}
@@ -102,6 +102,9 @@ func RunSpinner(message string, fn func() (any, error)) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("spinner: %w", err)
 	}
-	fm := final.(spinnerModel)
+	fm, ok := final.(spinnerModel)
+	if !ok {
+		return nil, fmt.Errorf("spinner: unexpected final model type %T", final)
+	}
 	return fm.result, fm.err
 }
