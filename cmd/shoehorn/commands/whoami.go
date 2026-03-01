@@ -10,6 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	interactive   bool
+	noInteractive bool
+	outputFormat  string
+)
+
 var whoamiCmd = &cobra.Command{
 	Use:   "whoami",
 	Short: "Show current user info",
@@ -19,6 +25,10 @@ var whoamiCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(whoamiCmd)
+
+	whoamiCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Force interactive output")
+	whoamiCmd.Flags().BoolVar(&noInteractive, "no-interactive", false, "Disable interactive output")
+	whoamiCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (e.g. json, yaml)")
 }
 
 func runWhoami(cmd *cobra.Command, args []string) error {
