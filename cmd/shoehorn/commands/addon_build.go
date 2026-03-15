@@ -1,17 +1,14 @@
 package commands
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
+	"github.com/imbabamba/shoehorn-cli/pkg/addon"
 	"github.com/spf13/cobra"
 )
-
-const maxBundleSize = 2 * 1024 * 1024 // 2MB
 
 var addonBuildCmd = &cobra.Command{
 	Use:   "build",
@@ -26,12 +23,13 @@ Output: dist/addon.js`,
 }
 
 func runAddonBuild(_ *cobra.Command, _ []string) error {
-	// Verify we're in an addon project
-	if _, err := os.Stat("manifest.json"); os.IsNotExist(err) {
-		return fmt.Errorf("no manifest.json found - run this from an addon project directory")
+	workDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
 	}
-	if _, err := os.Stat("package.json"); os.IsNotExist(err) {
-		return fmt.Errorf("no package.json found - declarative addons don't need building")
+
+	if err := addon.ValidateBuildPrereqs(workDir); err != nil {
+		return err
 	}
 
 	// Run npm run build (which invokes esbuild)
@@ -42,40 +40,19 @@ func runAddonBuild(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("build failed: %w", err)
 	}
 
-	// Verify output exists
-	bundlePath := filepath.Join("dist", "addon.js")
-	info, err := os.Stat(bundlePath)
+	// Validate and checksum the output
+	bundlePath := filepath.Join(workDir, "dist", "addon.js")
+	result, err := addon.ValidateBundle(bundlePath)
 	if err != nil {
-		return fmt.Errorf("build output not found at %s", bundlePath)
+		return err
 	}
-
-	// Check bundle size
-	if info.Size() > maxBundleSize {
-		return fmt.Errorf("bundle size %d bytes exceeds maximum %d bytes (2MB)", info.Size(), maxBundleSize)
-	}
-
-	// Compute SHA256
-	content, err := os.ReadFile(bundlePath)
-	if err != nil {
-		return fmt.Errorf("read bundle: %w", err)
-	}
-	hash := sha256.Sum256(content)
-	checksum := hex.EncodeToString(hash[:])
 
 	fmt.Println()
-	fmt.Printf("Build complete: %s\n", bundlePath)
-	fmt.Printf("  Size:   %s\n", formatBuildSize(info.Size()))
-	fmt.Printf("  SHA256: %s\n", checksum)
+	fmt.Printf("Build complete: %s\n", result.Path)
+	fmt.Printf("  Size:   %s\n", result.SizeFormatted)
+	fmt.Printf("  SHA256: %s\n", result.SHA256)
 
 	return nil
-}
-
-func formatBuildSize(bytes int64) string {
-	const kb = 1024
-	if bytes < kb {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	return fmt.Sprintf("%.1f KB", float64(bytes)/float64(kb))
 }
 
 func init() {
