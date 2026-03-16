@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/imbabamba/shoehorn-cli/pkg/api"
 	"github.com/imbabamba/shoehorn-cli/pkg/tui"
@@ -16,7 +17,8 @@ var addonPublishCmd = &cobra.Command{
 	Short: "Publish addon to the marketplace",
 	Long: `Publish the current addon to your Shoehorn instance's marketplace.
 
-Reads manifest.json from the current directory and uploads it.
+Reads manifest.json from the current directory and uploads it along with
+any built bundles (dist/addon.js, dist/frontend.js).
 Run this from the addon project directory.`,
 	RunE: runAddonPublish,
 }
@@ -41,7 +43,8 @@ func runAddonPublish(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	result, spinErr := tui.RunSpinner("Publishing addon...", func() (any, error) {
+	// Step 1: Publish manifest
+	result, spinErr := tui.RunSpinner("Publishing manifest...", func() (any, error) {
 		return client.PublishAddonManifest(context.Background(), manifest)
 	})
 	if spinErr != nil {
@@ -57,6 +60,33 @@ func runAddonPublish(_ *cobra.Command, _ []string) error {
 
 	fmt.Printf("Addon %q %s successfully.\n", pub.Slug, action)
 	fmt.Printf("  Name: %s\n", pub.Name)
+	if pub.Installed {
+		fmt.Println("  Auto-installed for your tenant.")
+	}
+
+	// Step 2: Upload bundles if they exist
+	bundles := map[string][]byte{}
+
+	if data, err := os.ReadFile(filepath.Join("dist", "addon.js")); err == nil {
+		bundles["backend"] = data
+	}
+	if data, err := os.ReadFile(filepath.Join("dist", "frontend.js")); err == nil {
+		bundles["frontend"] = data
+	}
+
+	if len(bundles) > 0 {
+		uploadResult, uploadErr := tui.RunSpinner("Uploading bundles...", func() (any, error) {
+			return client.UploadAddonBundle(context.Background(), pub.Slug, bundles)
+		})
+		if uploadErr != nil {
+			return fmt.Errorf("upload bundles: %w", uploadErr)
+		}
+
+		upload := uploadResult.(*api.BundleUploadResult)
+		for name, size := range upload.Uploaded {
+			fmt.Printf("  Bundle %s: %d bytes uploaded\n", name, size)
+		}
+	}
 
 	return nil
 }

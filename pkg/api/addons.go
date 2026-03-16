@@ -1,8 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 )
 
 // ─── Addon Types ──────────────────────────────────────────────────────────────
@@ -170,9 +175,66 @@ func (c *Client) PublishAddonManifest(ctx context.Context, manifest map[string]i
 	return &result, nil
 }
 
+// UploadAddonBundle uploads backend and/or frontend bundles for an addon.
+func (c *Client) UploadAddonBundle(ctx context.Context, slug string, bundles map[string][]byte) (*BundleUploadResult, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	for fieldName, data := range bundles {
+		part, err := writer.CreateFormFile(fieldName, fieldName+".js")
+		if err != nil {
+			return nil, fmt.Errorf("create form file %s: %w", fieldName, err)
+		}
+		if _, err := part.Write(data); err != nil {
+			return nil, fmt.Errorf("write form file %s: %w", fieldName, err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+fmt.Sprintf("/api/v1/marketplace/%s/bundle", slug), &body)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("upload bundle: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("upload bundle failed (%d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BundleUploadResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &result, nil
+}
+
 // PublishResult represents the response from publishing an addon manifest.
 type PublishResult struct {
-	Slug    string `json:"slug"`
-	Name    string `json:"name"`
-	Created bool   `json:"created"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	Created   bool   `json:"created"`
+	Installed bool   `json:"installed"`
+}
+
+// BundleUploadResult represents the response from uploading addon bundles.
+type BundleUploadResult struct {
+	Slug     string         `json:"slug"`
+	Uploaded map[string]int `json:"uploaded"`
 }
