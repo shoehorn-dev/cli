@@ -12,23 +12,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var addonPublishDir string
+
 var addonPublishCmd = &cobra.Command{
 	Use:   "publish",
 	Short: "Publish addon to the marketplace",
-	Long: `Publish the current addon to your Shoehorn instance's marketplace.
+	Long: `Publish an addon to your Shoehorn instance's marketplace.
 
-Reads manifest.json from the current directory and uploads it along with
-any built bundles (dist/addon.js, dist/frontend.js).
-Run this from the addon project directory.`,
+Reads manifest.json and uploads it along with any built bundles
+(dist/addon.js, dist/frontend.js).
+
+Examples:
+  # Publish from the current directory
+  shoehorn addon publish
+
+  # Publish from a specific directory
+  shoehorn addon publish --dir ./addons/jira-sync`,
 	RunE: runAddonPublish,
 }
 
 func runAddonPublish(_ *cobra.Command, _ []string) error {
+	dir := addonPublishDir
+	if dir == "" {
+		dir = "."
+	}
+
 	// Read manifest.json
-	manifestData, err := os.ReadFile("manifest.json")
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("no manifest.json found - run this from an addon project directory")
+			return fmt.Errorf("no manifest.json found in %s", dir)
 		}
 		return fmt.Errorf("read manifest.json: %w", err)
 	}
@@ -67,10 +81,10 @@ func runAddonPublish(_ *cobra.Command, _ []string) error {
 	// Step 2: Upload bundles if they exist
 	bundles := map[string][]byte{}
 
-	if data, err := os.ReadFile(filepath.Join("dist", "addon.js")); err == nil {
+	if data, err := os.ReadFile(filepath.Join(dir, "dist", "addon.js")); err == nil {
 		bundles["backend"] = data
 	}
-	if data, err := os.ReadFile(filepath.Join("dist", "frontend.js")); err == nil {
+	if data, err := os.ReadFile(filepath.Join(dir, "dist", "frontend.js")); err == nil {
 		bundles["frontend"] = data
 	}
 
@@ -92,5 +106,6 @@ func runAddonPublish(_ *cobra.Command, _ []string) error {
 }
 
 func init() {
+	addonPublishCmd.Flags().StringVarP(&addonPublishDir, "dir", "d", "", "addon project directory (default: current directory)")
 	addonCmd.AddCommand(addonPublishCmd)
 }
