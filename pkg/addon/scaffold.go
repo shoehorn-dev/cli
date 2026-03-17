@@ -256,9 +256,25 @@ if (isWatch) {
 var indexTSTemplate = `/**
  * {{.DisplayName}} - Shoehorn Addon ({{.Tier}})
  *
- * Functions are called by the QuickJS runtime with JSON string arguments.
- * handleRoute receives the request as a JSON string and must return a JSON string.
+ * Runtime contract:
+ * - Functions receive JS objects as arguments (not JSON strings)
+ * - Functions return JS objects (runtime wraps in JSON.stringify automatically)
+ * - Host functions available: ctx.log, ctx.config, ctx.http, ctx.entities
  */
+
+// Addon context provided by Shoehorn runtime
+declare const ctx: {
+  log: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void; debug: (msg: string) => void };
+  config: { get: (key: string) => string };
+  http: { request: (method: string, url: string, opts?: { body?: string; headers?: Record<string, string>; timeout?: number }) => { status: number; body: unknown; headers?: Record<string, string> } };
+  entities: {
+    list: (filter?: { type?: string; lifecycle?: string; owner?: string; limit?: number; offset?: number }) => { entities: unknown[]; total: number };
+    get: (id: string) => { entity: unknown };
+    upsert: (entity: { serviceId: string; name: string; type: string; description?: string; tags?: string[]; links?: { name: string; url: string; icon?: string }[] }) => { entity: unknown; status: string };
+    delete: (id: string) => { status: string };
+  };
+  addon: { id: string; version: string; tier: string };
+};
 
 interface RouteRequest {
   method: string;
@@ -270,33 +286,29 @@ interface RouteRequest {
 
 interface RouteResponse {
   status: number;
-  body?: string;
+  body: unknown;
   headers?: Record<string, string>;
 }
 
 /**
  * Handle incoming HTTP requests routed to this addon.
- * Called by runtime as: handleRoute('{"method":"GET","path":"/ping",...}')
  */
-export function handleRoute(requestJSON: string): string {
-  const request: RouteRequest = JSON.parse(requestJSON);
+export function handleRoute(request: RouteRequest): RouteResponse {
+  ctx.log.info('Request: ' + request.method + ' ' + request.path);
 
   if (request.path === '/ping') {
-    const response: RouteResponse = {
-      status: 200,
-      body: JSON.stringify({ message: 'pong', addon: '{{.Name}}' }),
-    };
-    return JSON.stringify(response);
+    return { status: 200, body: { message: 'pong', addon: '{{.Name}}' } };
   }
 
-  return JSON.stringify({ status: 404, body: JSON.stringify({ error: 'not found' }) });
+  return { status: 404, body: { error: 'not found' } };
 }
 
 /**
  * Sync function called on schedule (if configured in manifest).
  */
-export function sync(): string {
-  return JSON.stringify({ synced: 0 });
+export function sync(): { synced: number } {
+  ctx.log.info('Starting sync...');
+  return { synced: 0 };
 }
 `
 
@@ -304,8 +316,22 @@ var indexTSFullTemplate = `/**
  * {{.DisplayName}} - Shoehorn Addon (full)
  *
  * Full-tier addon with access to external resources (Postgres, Kafka, etc.)
- * Functions are called by the QuickJS runtime with JSON string arguments.
+ * Runtime contract: functions receive/return JS objects. ctx.* host functions available.
  */
+
+// Addon context provided by Shoehorn runtime
+declare const ctx: {
+  log: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void; debug: (msg: string) => void };
+  config: { get: (key: string) => string };
+  http: { request: (method: string, url: string, opts?: { body?: string; headers?: Record<string, string>; timeout?: number }) => { status: number; body: unknown; headers?: Record<string, string> } };
+  entities: {
+    list: (filter?: { type?: string; limit?: number; offset?: number }) => { entities: unknown[]; total: number };
+    get: (id: string) => { entity: unknown };
+    upsert: (entity: { serviceId: string; name: string; type: string; description?: string; tags?: string[]; links?: { name: string; url: string; icon?: string }[] }) => { entity: unknown; status: string };
+    delete: (id: string) => { status: string };
+  };
+  addon: { id: string; version: string; tier: string };
+};
 
 interface RouteRequest {
   method: string;
@@ -317,37 +343,30 @@ interface RouteRequest {
 
 interface RouteResponse {
   status: number;
-  body?: string;
+  body: unknown;
   headers?: Record<string, string>;
 }
 
 /**
  * Handle incoming HTTP requests routed to this addon.
- * Called by runtime as: handleRoute('{"method":"GET","path":"/ping",...}')
  */
-export function handleRoute(requestJSON: string): string {
-  const request: RouteRequest = JSON.parse(requestJSON);
+export function handleRoute(request: RouteRequest): RouteResponse {
+  ctx.log.info('Request: ' + request.method + ' ' + request.path);
 
   if (request.path === '/ping') {
-    const response: RouteResponse = {
-      status: 200,
-      body: JSON.stringify({ message: 'pong', addon: '{{.Name}}' }),
-    };
-    return JSON.stringify(response);
+    return { status: 200, body: { message: 'pong', addon: '{{.Name}}' } };
   }
 
-  return JSON.stringify({ status: 404, body: JSON.stringify({ error: 'not found' }) });
+  return { status: 404, body: { error: 'not found' } };
 }
 
 /**
  * Sync function called on schedule (if configured in manifest).
- * For full-tier addons, use ctx.postgres.query() and ctx.entities.upsert()
- * via host functions (available at runtime, not at build time).
+ * For full-tier addons, ctx.postgres and ctx.kafka are also available.
  */
-export function sync(): string {
-  // Example: host_postgres_query('SELECT datname FROM pg_database')
-  // Then: host_entities_upsert(JSON.stringify({name: row.datname, type: 'database'}))
-  return JSON.stringify({ synced: 0 });
+export function sync(): { synced: number } {
+  ctx.log.info('Starting sync...');
+  return { synced: 0 };
 }
 `
 
