@@ -33,14 +33,14 @@ type Addon struct {
 
 // AddonStatus represents the runtime status of an addon.
 type AddonStatus struct {
-	Slug        string `json:"slug"`
-	Status      string `json:"status"`
-	Enabled     bool   `json:"enabled"`
-	LastSyncAt  string `json:"lastSyncAt,omitempty"`
-	LastError   string `json:"lastError,omitempty"`
-	ExecCount   int    `json:"execCount,omitempty"`
-	ErrorCount  int    `json:"errorCount,omitempty"`
-	VMMemory    int64  `json:"vmMemoryBytes,omitempty"`
+	Slug       string `json:"slug"`
+	Status     string `json:"status"`
+	Enabled    bool   `json:"enabled"`
+	LastSyncAt string `json:"lastSyncAt,omitempty"`
+	LastError  string `json:"lastError,omitempty"`
+	ExecCount  int    `json:"execCount,omitempty"`
+	ErrorCount int    `json:"errorCount,omitempty"`
+	VMMemory   int64  `json:"vmMemoryBytes,omitempty"`
 }
 
 // AddonLogEntry represents a single log entry from an addon.
