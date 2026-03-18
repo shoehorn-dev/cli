@@ -79,17 +79,29 @@ jobs:
           CGO_ENABLED: 0
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          BINARY_NAME="shoehorn"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="shoehorn.exe"
+          fi
           go build \
             -trimpath \
             -ldflags="-s -w -X main.version=${VERSION}" \
-            -o "${{ matrix.artifact }}" \
+            -o "${BINARY_NAME}" \
             ./cmd/shoehorn
 
-      - name: Upload binary artifact
+      - name: Package archive
+        run: |
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "${{ matrix.artifact }}.zip" shoehorn.exe
+          else
+            tar czf "${{ matrix.artifact }}.tar.gz" shoehorn
+          fi
+
+      - name: Upload archive artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.*
           retention-days: 1
 
   # ─── Checksums ─────────────────────────────────────────────────────────────
@@ -109,7 +121,7 @@ jobs:
       - name: Generate SHA256 checksums
         run: |
           cd binaries
-          sha256sum shoehorn_* > checksums.txt
+          sha256sum shoehorn_*.tar.gz shoehorn_*.zip > checksums.txt
           echo "Checksums:"
           cat checksums.txt
 
@@ -153,7 +165,7 @@ jobs:
       - name: Parse Windows checksum
         id: sha
         run: |
-          echo "windows_amd64=$(grep shoehorn_windows_amd64.exe checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "windows_amd64=$(grep shoehorn_windows_amd64.exe.zip checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Generate winget manifest
         env:
@@ -172,7 +184,7 @@ jobs:
           PackageUrl: https://github.com/${REPO}
           Installers:
             - Architecture: x64
-              InstallerUrl: https://github.com/${REPO}/releases/download/${TAG}/shoehorn_windows_amd64.exe
+              InstallerUrl: https://github.com/${REPO}/releases/download/${TAG}/shoehorn_windows_amd64.exe.zip
               InstallerSha256: ${SHA_WINDOWS}
               InstallerType: portable
               Commands:
@@ -308,29 +320,25 @@ jobs:
 
           \`\`\`bash
           # Linux (amd64)
-          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_amd64 -o shoehorn
-          chmod +x shoehorn
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_amd64.tar.gz | tar xz
           sudo mv shoehorn /usr/local/bin/
 
           # Linux (arm64)
-          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_arm64 -o shoehorn
-          chmod +x shoehorn
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_arm64.tar.gz | tar xz
           sudo mv shoehorn /usr/local/bin/
 
           # macOS (Apple Silicon)
-          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_arm64 -o shoehorn
-          chmod +x shoehorn
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_arm64.tar.gz | tar xz
           sudo mv shoehorn /usr/local/bin/
 
           # macOS (Intel)
-          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_amd64 -o shoehorn
-          chmod +x shoehorn
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_amd64.tar.gz | tar xz
           sudo mv shoehorn /usr/local/bin/
           \`\`\`
 
           #### Windows
 
-          Download \`shoehorn_windows_amd64.exe\`, rename it to \`shoehorn.exe\`, and add its directory to your PATH.
+          Download \`shoehorn_windows_amd64.exe.zip\`, extract it, and add the directory containing \`shoehorn.exe\` to your PATH.
 
           ## Quick Start
 
@@ -354,11 +362,11 @@ jobs:
 
           | Platform | Architecture | File |
           |----------|-------------|------|
-          | Linux | amd64 | \`shoehorn_linux_amd64\` |
-          | Linux | arm64 | \`shoehorn_linux_arm64\` |
-          | macOS | arm64 (Apple Silicon) | \`shoehorn_darwin_arm64\` |
-          | macOS | amd64 (Intel) | \`shoehorn_darwin_amd64\` |
-          | Windows | amd64 | \`shoehorn_windows_amd64.exe\` |
+          | Linux | amd64 | \`shoehorn_linux_amd64.tar.gz\` |
+          | Linux | arm64 | \`shoehorn_linux_arm64.tar.gz\` |
+          | macOS | arm64 (Apple Silicon) | \`shoehorn_darwin_arm64.tar.gz\` |
+          | macOS | amd64 (Intel) | \`shoehorn_darwin_amd64.tar.gz\` |
+          | Windows | amd64 | \`shoehorn_windows_amd64.exe.zip\` |
           EOF
 
           echo "Release notes written"
@@ -386,11 +394,11 @@ jobs:
             --title "${TAG}" \
             --notes-file release-notes.md \
             ${PRERELEASE_FLAG} \
-            release-assets/shoehorn_linux_amd64 \
-            release-assets/shoehorn_linux_arm64 \
-            release-assets/shoehorn_darwin_amd64 \
-            release-assets/shoehorn_darwin_arm64 \
-            release-assets/shoehorn_windows_amd64.exe \
+            release-assets/shoehorn_linux_amd64.tar.gz \
+            release-assets/shoehorn_linux_arm64.tar.gz \
+            release-assets/shoehorn_darwin_amd64.tar.gz \
+            release-assets/shoehorn_darwin_arm64.tar.gz \
+            release-assets/shoehorn_windows_amd64.exe.zip \
             release-assets/checksums.txt \
             release-assets/shoehorn.winget.yaml
 
@@ -427,10 +435,10 @@ jobs:
       - name: Parse checksums
         id: sha
         run: |
-          echo "darwin_amd64=$(grep shoehorn_darwin_amd64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "darwin_arm64=$(grep shoehorn_darwin_arm64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "linux_amd64=$(grep shoehorn_linux_amd64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "linux_arm64=$(grep shoehorn_linux_arm64 checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "darwin_amd64=$(grep shoehorn_darwin_amd64.tar.gz checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "darwin_arm64=$(grep shoehorn_darwin_arm64.tar.gz checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_amd64=$(grep shoehorn_linux_amd64.tar.gz checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(grep shoehorn_linux_arm64.tar.gz checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Generate Homebrew formula
         env:
@@ -452,27 +460,26 @@ jobs:
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_darwin_arm64"
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_darwin_arm64.tar.gz"
                 sha256 "${SHA_DARWIN_ARM64}"
               else
-                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_darwin_amd64"
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_darwin_amd64.tar.gz"
                 sha256 "${SHA_DARWIN_AMD64}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_linux_arm64"
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_linux_arm64.tar.gz"
                 sha256 "${SHA_LINUX_ARM64}"
               else
-                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_linux_amd64"
+                url "https://github.com/${REPO}/releases/download/${TAG}/shoehorn_linux_amd64.tar.gz"
                 sha256 "${SHA_LINUX_AMD64}"
               end
             end
 
             def install
-              binary_name = stable.url.split("/").last
-              bin.install binary_name => "shoehorn"
+              bin.install "shoehorn"
             end
 
             test do
