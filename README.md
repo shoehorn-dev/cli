@@ -7,19 +7,42 @@ Command-line interface for the Shoehorn Internal Developer Portal. Browse your s
 ### Build from source
 
 ```bash
-cd C:\Users\check\projects\shoehorn-dev\cli
 go build -o shoehorn.exe ./cmd/shoehorn
 ```
 
-### Add to PATH (optional)
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap shoehorn-dev/tap
+brew install shoehorn
+```
+
+### Mise (macOS / Linux / Windows)
+
+Add to your `mise.toml` or `~/.config/mise/config.toml`:
+
+```toml
+[tools."github:shoehorn-dev/cli"]
+version = "latest"
+exe = "shoehorn"
+```
+
+Then run:
+
+```bash
+mise install
+```
+
+**Windows:** Ensure the mise shims directory is in your PATH:
 
 ```powershell
-# Windows PowerShell
-$env:Path += ";C:\Users\check\projects\shoehorn-dev\cli"
-
-# bash/zsh
-export PATH=$PATH:/path/to/shoehorn-dev/cli
+# Add to your PowerShell profile (one-time setup):
+Add-Content $PROFILE '$env:PATH = "$env:LOCALAPPDATA\mise\shims;$env:PATH"'
 ```
+
+### Manual download
+
+Download the binary for your platform from [Releases](https://github.com/shoehorn-dev/cli/releases), extract it, and add to your PATH.
 
 ---
 
@@ -62,16 +85,10 @@ shoehorn get entity payment-service --scorecard
 
 ## Authentication
 
-### PAT login (recommended — works today)
+### PAT login
 
 ```bash
 shoehorn auth login --server http://localhost:8080 --token shp_xxxx
-```
-
-### Device flow login (requires Zitadel config)
-
-```bash
-shoehorn auth login --server http://localhost:8080
 ```
 
 ### Check auth status
@@ -285,11 +302,39 @@ shoehorn forge molds list --output json
 
 ### `forge molds get`
 
-Detail view for a mold: inputs and steps.
+Detail view for a mold: actions, inputs, and steps.
 
 ```bash
-shoehorn forge molds get create-service
+shoehorn forge molds get create-empty-github-repo
 ```
+
+---
+
+### `forge execute`
+
+Execute a mold workflow in one step. Fetches the mold, resolves the action, fills defaults, validates required inputs, and creates a run.
+
+```bash
+shoehorn forge execute create-empty-github-repo \
+  --input name=my-service \
+  --input owner=my-org
+
+# Specify a non-primary action
+shoehorn forge execute my-mold --action scaffold --input name=my-app
+
+# Validate without executing
+shoehorn forge execute create-empty-github-repo \
+  --input name=test --input owner=my-org --dry-run
+
+# Pass inputs as JSON
+shoehorn forge execute my-mold --inputs '{"name":"my-svc","owner":"my-org"}'
+```
+
+Flags:
+- `--input` — repeatable `key=value` pairs (types are coerced from the mold schema)
+- `--inputs` — JSON object with all inputs
+- `--action` — action name (auto-selects primary action if omitted)
+- `--dry-run` — validate without executing
 
 ---
 
@@ -317,11 +362,11 @@ shoehorn forge run get <run-id> --output json
 
 ### `forge run create`
 
-Start a new workflow run from a mold.
+Start a new workflow run from a mold (lower-level than `forge execute`).
 
 ```bash
-shoehorn forge run create create-service
-shoehorn forge run create create-service --inputs '{"name":"my-svc","team":"platform-team"}'
+shoehorn forge run create create-empty-github-repo --action create \
+  --input name=my-service --input owner=my-org
 ```
 
 ---

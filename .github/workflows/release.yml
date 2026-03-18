@@ -306,30 +306,28 @@ jobs:
           brew install shoehorn
           \`\`\`
 
-          ### Mise
+          ### Mise (macOS / Linux / Windows)
+
+          Add to your \`mise.toml\` or \`~/.config/mise/config.toml\`:
 
           \`\`\`toml
-          # In mise.toml or ~/.config/mise/config.toml
           [tools."github:shoehorn-dev/cli"]
           version = "latest"
           exe = "shoehorn"
           \`\`\`
 
+          Then run \`mise install\`.
+
+          > **Windows:** Add mise shims to your PowerShell profile:
+          > \`\`\`powershell
+          > Add-Content \\\$PROFILE '\\\$env:PATH = "\\\$env:LOCALAPPDATA\\mise\\shims;\\\$env:PATH"'
+          > \`\`\`
+
           ### Manual download
 
-          Download the binary for your platform, make it executable, and add to your PATH.
-
-          #### Linux / macOS
+          Download the binary for your platform, extract it, and add to your PATH.
 
           \`\`\`bash
-          # Linux (amd64)
-          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_amd64.tar.gz | tar xz
-          sudo mv shoehorn /usr/local/bin/
-
-          # Linux (arm64)
-          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_arm64.tar.gz | tar xz
-          sudo mv shoehorn /usr/local/bin/
-
           # macOS (Apple Silicon)
           curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_arm64.tar.gz | tar xz
           sudo mv shoehorn /usr/local/bin/
@@ -337,22 +335,33 @@ jobs:
           # macOS (Intel)
           curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_darwin_amd64.tar.gz | tar xz
           sudo mv shoehorn /usr/local/bin/
+
+          # Linux (amd64)
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_amd64.tar.gz | tar xz
+          sudo mv shoehorn /usr/local/bin/
+
+          # Linux (arm64)
+          curl -L https://github.com/\${{ github.repository }}/releases/download/${TAG}/shoehorn_linux_arm64.tar.gz | tar xz
+          sudo mv shoehorn /usr/local/bin/
           \`\`\`
 
-          #### Windows
+          **Windows:** Download \`shoehorn_windows_amd64.exe.zip\`, extract, and add the folder to your PATH.
 
-          Download \`shoehorn_windows_amd64.exe.zip\`, extract it, and add the directory containing \`shoehorn.exe\` to your PATH.
+          > **macOS Gatekeeper:** If macOS blocks the binary with "developer cannot be verified", use Homebrew or Mise instead. These install methods are signed and verified automatically.
 
           ## Quick Start
 
           \`\`\`bash
-          # Authenticate with a Personal Access Token
+          # Authenticate
           shoehorn auth login --server https://your-shoehorn.dev --token shp_xxx
 
           # Explore the catalog
           shoehorn get entities
           shoehorn search "payment"
-          shoehorn whoami
+
+          # Execute a Forge workflow
+          shoehorn forge execute create-empty-github-repo \\
+            --input name=my-service --input owner=my-org
           \`\`\`
 
           ## Verify integrity
@@ -365,10 +374,10 @@ jobs:
 
           | Platform | Architecture | File |
           |----------|-------------|------|
-          | Linux | amd64 | \`shoehorn_linux_amd64.tar.gz\` |
-          | Linux | arm64 | \`shoehorn_linux_arm64.tar.gz\` |
           | macOS | arm64 (Apple Silicon) | \`shoehorn_darwin_arm64.tar.gz\` |
           | macOS | amd64 (Intel) | \`shoehorn_darwin_amd64.tar.gz\` |
+          | Linux | amd64 | \`shoehorn_linux_amd64.tar.gz\` |
+          | Linux | arm64 | \`shoehorn_linux_arm64.tar.gz\` |
           | Windows | amd64 | \`shoehorn_windows_amd64.exe.zip\` |
           EOF
 
