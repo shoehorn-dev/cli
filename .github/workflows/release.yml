@@ -308,8 +308,11 @@ jobs:
 
           ### Mise
 
-          \`\`\`bash
-          mise use ubi:shoehorn-dev/cli
+          \`\`\`toml
+          # In mise.toml or ~/.config/mise/config.toml
+          [tools."github:shoehorn-dev/cli"]
+          version = "latest"
+          exe = "shoehorn"
           \`\`\`
 
           ### Manual download
