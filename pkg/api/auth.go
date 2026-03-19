@@ -9,7 +9,7 @@ import (
 type AuthStatusResponse struct {
 	Authenticated bool      `json:"authenticated"`
 	User          *UserInfo `json:"user,omitempty"`
-	ExpiresAt     time.Time `json:"expires_at,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 // UserInfo contains authenticated user information

@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/addon"
+	"github.com/shoehorn-dev/cli/pkg/addon"
 	"github.com/spf13/cobra"
 )
 

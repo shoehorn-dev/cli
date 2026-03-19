@@ -2,7 +2,7 @@
 package get
 
 import (
-	"github.com/imbabamba/shoehorn-cli/cmd/shoehorn/commands"
+	"github.com/shoehorn-dev/cli/cmd/shoehorn/commands"
 	"github.com/spf13/cobra"
 )
 

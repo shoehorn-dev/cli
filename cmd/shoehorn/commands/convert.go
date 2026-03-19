@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/api"
-	"github.com/imbabamba/shoehorn-cli/pkg/config"
+	"github.com/shoehorn-dev/cli/pkg/api"
+	"github.com/shoehorn-dev/cli/pkg/config"
 	"github.com/spf13/cobra"
 )
 

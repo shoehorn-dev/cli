@@ -167,7 +167,7 @@ func (c *Client) ListMarketplaceItems(ctx context.Context, kind string) ([]*Mark
 }
 
 // PublishAddonManifest publishes an addon manifest to the marketplace.
-func (c *Client) PublishAddonManifest(ctx context.Context, manifest map[string]interface{}) (*PublishResult, error) {
+func (c *Client) PublishAddonManifest(ctx context.Context, manifest map[string]any) (*PublishResult, error) {
 	var result PublishResult
 	if err := c.Post(ctx, "/api/v1/marketplace/import-manifest", manifest, &result); err != nil {
 		return nil, fmt.Errorf("publish addon: %w", err)

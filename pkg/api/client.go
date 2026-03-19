@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/config"
+	"github.com/shoehorn-dev/cli/pkg/config"
 )
 
 // loadConfig is a package-level alias to avoid import cycles
@@ -44,7 +44,7 @@ func (c *Client) GetToken() string {
 }
 
 // do executes an HTTP request and handles the response
-func (c *Client) do(ctx context.Context, method, path string, body, result interface{}) error {
+func (c *Client) do(ctx context.Context, method, path string, body, result any) error {
 	var reqBody io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)
@@ -98,7 +98,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, result inter
 
 // doIgnoreStatus performs an HTTP request and decodes the body into result
 // regardless of HTTP status code. Returns the status code alongside any error.
-func (c *Client) doIgnoreStatus(ctx context.Context, method, path string, body, result interface{}) (int, error) {
+func (c *Client) doIgnoreStatus(ctx context.Context, method, path string, body, result any) (int, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)
@@ -139,17 +139,17 @@ func (c *Client) doIgnoreStatus(ctx context.Context, method, path string, body, 
 }
 
 // Get performs a GET request
-func (c *Client) Get(ctx context.Context, path string, result interface{}) error {
+func (c *Client) Get(ctx context.Context, path string, result any) error {
 	return c.do(ctx, http.MethodGet, path, nil, result)
 }
 
 // Post performs a POST request
-func (c *Client) Post(ctx context.Context, path string, body, result interface{}) error {
+func (c *Client) Post(ctx context.Context, path string, body, result any) error {
 	return c.do(ctx, http.MethodPost, path, body, result)
 }
 
 // Put performs a PUT request
-func (c *Client) Put(ctx context.Context, path string, body, result interface{}) error {
+func (c *Client) Put(ctx context.Context, path string, body, result any) error {
 	return c.do(ctx, http.MethodPut, path, body, result)
 }
 

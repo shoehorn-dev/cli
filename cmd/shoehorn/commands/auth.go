@@ -3,11 +3,12 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/api"
-	"github.com/imbabamba/shoehorn-cli/pkg/config"
-	"github.com/imbabamba/shoehorn-cli/pkg/tui"
+	"github.com/shoehorn-dev/cli/pkg/api"
+	"github.com/shoehorn-dev/cli/pkg/config"
+	"github.com/shoehorn-dev/cli/pkg/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -116,14 +117,22 @@ func runLoginWithPAT(server, token string) error {
 	}
 
 	// Success panel
-	body := fmt.Sprintf(
-		"%s  %s\n%s  %s\n%s  %s\n%s  %s",
-		tui.LabelStyle.Render("Name"), me.Name,
-		tui.LabelStyle.Render("Email"), me.Email,
-		tui.LabelStyle.Render("Tenant"), me.TenantID,
-		tui.LabelStyle.Render("Server"), server,
-	)
-	fmt.Println(tui.SuccessBox("Authenticated with PAT", body))
+	var lines []string
+	if me.Name != "" {
+		lines = append(lines, fmt.Sprintf("%s  %s", tui.LabelStyle.Render("Name"), me.Name))
+	}
+	if me.Email != "" {
+		lines = append(lines, fmt.Sprintf("%s  %s", tui.LabelStyle.Render("Email"), me.Email))
+	}
+	if me.Name == "" && me.Email == "" {
+		lines = append(lines, fmt.Sprintf("%s  %s", tui.LabelStyle.Render("Account"), "Service Account (PAT)"))
+	}
+	lines = append(lines, fmt.Sprintf("%s  %s", tui.LabelStyle.Render("Tenant"), me.TenantID))
+	lines = append(lines, fmt.Sprintf("%s  %s", tui.LabelStyle.Render("Server"), server))
+	if len(me.Roles) > 0 {
+		lines = append(lines, fmt.Sprintf("%s  %s", tui.LabelStyle.Render("Roles"), strings.Join(me.Roles, ", ")))
+	}
+	fmt.Println(tui.SuccessBox("Authenticated with PAT", strings.Join(lines, "\n")))
 	return nil
 }
 
@@ -155,9 +164,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if currentProfile.Auth.User != nil {
-		fmt.Printf("Email:   %s\n", currentProfile.Auth.User.Email)
+		if currentProfile.Auth.User.Email != "" {
+			fmt.Printf("Email:   %s\n", currentProfile.Auth.User.Email)
+		}
 		if currentProfile.Auth.User.Name != "" {
 			fmt.Printf("Name:    %s\n", currentProfile.Auth.User.Name)
+		}
+		if currentProfile.Auth.User.Email == "" && currentProfile.Auth.User.Name == "" {
+			fmt.Println("Account: Service Account (PAT)")
 		}
 		if currentProfile.Auth.User.TenantID != "" {
 			fmt.Printf("Tenant:  %s\n", currentProfile.Auth.User.TenantID)

@@ -123,7 +123,7 @@ func TestScaffold_ManifestIsValidJSON(t *testing.T) {
 		t.Fatalf("read manifest.json: %v", err)
 	}
 
-	var manifest map[string]interface{}
+	var manifest map[string]any
 	if err := json.Unmarshal(content, &manifest); err != nil {
 		t.Fatalf("manifest.json is not valid JSON: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestScaffold_ManifestIsValidJSON(t *testing.T) {
 		t.Errorf("expected kind=addon, got %v", manifest["kind"])
 	}
 
-	metadata, ok := manifest["metadata"].(map[string]interface{})
+	metadata, ok := manifest["metadata"].(map[string]any)
 	if !ok {
 		t.Fatal("expected metadata object")
 	}
@@ -140,7 +140,7 @@ func TestScaffold_ManifestIsValidJSON(t *testing.T) {
 		t.Errorf("expected slug=test-addon, got %v", metadata["slug"])
 	}
 
-	addon, ok := manifest["addon"].(map[string]interface{})
+	addon, ok := manifest["addon"].(map[string]any)
 	if !ok {
 		t.Fatal("expected addon object")
 	}
@@ -214,7 +214,7 @@ func TestGenerateManifestJSON_ValidOutput(t *testing.T) {
 		t.Fatalf("GenerateManifestJSON() = %v", err)
 	}
 
-	var manifest map[string]interface{}
+	var manifest map[string]any
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
@@ -253,12 +253,12 @@ func TestScaffold_AllTiers_Parametric(t *testing.T) {
 
 			// manifest.json must be valid JSON with correct tier
 			content, _ := os.ReadFile(filepath.Join(target, "manifest.json"))
-			var manifest map[string]interface{}
+			var manifest map[string]any
 			if err := json.Unmarshal(content, &manifest); err != nil {
 				t.Errorf("tier=%s: invalid manifest JSON: %v", tier, err)
 			}
 
-			addonSection := manifest["addon"].(map[string]interface{})
+			addonSection := manifest["addon"].(map[string]any)
 			if addonSection["tier"] != string(tier) {
 				t.Errorf("tier=%s: manifest tier mismatch: %v", tier, addonSection["tier"])
 			}

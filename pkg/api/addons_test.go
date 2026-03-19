@@ -16,8 +16,8 @@ func TestListInstalledAddons_Success(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("unexpected method: %s", r.Method)
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"installations": []map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
+			"installations": []map[string]any{
 				{"itemSlug": "jira-sync", "itemKind": "addon", "itemVersion": "1.0.0", "enabled": true, "addonStatus": "running"},
 				{"itemSlug": "pagerduty", "itemKind": "addon", "itemVersion": "2.1.0", "enabled": false, "addonStatus": "stopped"},
 			},
@@ -46,8 +46,8 @@ func TestListInstalledAddons_Success(t *testing.T) {
 
 func TestListInstalledAddons_Empty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"installations": []interface{}{},
+		json.NewEncoder(w).Encode(map[string]any{
+			"installations": []any{},
 		})
 	}))
 	defer server.Close()
@@ -67,7 +67,7 @@ func TestGetAddonStatus_Success(t *testing.T) {
 		if r.URL.Path != "/api/v1/addons/jira-sync/status" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"slug":          "jira-sync",
 			"status":        "active",
 			"enabled":       true,
@@ -110,7 +110,7 @@ func TestInstallAddon_Success(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"itemSlug": "my-addon", "itemKind": "addon", "enabled": true,
 		})
 	}))
@@ -185,8 +185,8 @@ func TestGetAddonLogs_Success(t *testing.T) {
 		if r.URL.Query().Get("limit") != "50" {
 			t.Errorf("expected limit=50, got %s", r.URL.Query().Get("limit"))
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"entries": []map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
+			"entries": []map[string]any{
 				{"timestamp": "2026-03-15T10:00:00Z", "level": "info", "message": "Sync started"},
 				{"timestamp": "2026-03-15T10:00:01Z", "level": "error", "message": "Connection refused"},
 			},
@@ -215,7 +215,7 @@ func TestGetAddonLogs_DefaultLimit(t *testing.T) {
 		if r.URL.Query().Get("limit") != "100" {
 			t.Errorf("expected default limit=100, got %s", r.URL.Query().Get("limit"))
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{"entries": []interface{}{}})
+		json.NewEncoder(w).Encode(map[string]any{"entries": []any{}})
 	}))
 	defer server.Close()
 
@@ -231,11 +231,11 @@ func TestListMarketplaceItems_WithKindFilter(t *testing.T) {
 		if r.URL.Query().Get("kind") != "addon" {
 			t.Errorf("expected kind=addon, got %s", r.URL.Query().Get("kind"))
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"items": []map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
 				{"slug": "jira-sync", "kind": "addon", "name": "Jira Sync", "version": "1.0.0"},
 			},
-			"pagination": map[string]interface{}{"total": 1, "limit": 50, "offset": 0},
+			"pagination": map[string]any{"total": 1, "limit": 50, "offset": 0},
 		})
 	}))
 	defer server.Close()
@@ -262,14 +262,14 @@ func TestPublishAddonManifest_Success(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"slug": "my-addon", "name": "My Addon", "created": true,
 		})
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL)
-	result, err := client.PublishAddonManifest(context.Background(), map[string]interface{}{
+	result, err := client.PublishAddonManifest(context.Background(), map[string]any{
 		"schemaVersion": 1, "kind": "addon",
 	})
 	if err != nil {
@@ -286,8 +286,8 @@ func TestPublishAddonManifest_Success(t *testing.T) {
 func TestInstallAddon_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
 				"code":    "NOT_FOUND",
 				"message": "Marketplace item not found",
 			},

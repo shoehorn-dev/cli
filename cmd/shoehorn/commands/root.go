@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/tui"
+	"github.com/shoehorn-dev/cli/pkg/tui"
 	"github.com/spf13/cobra"
 )
 
