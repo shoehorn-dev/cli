@@ -11,14 +11,14 @@ import (
 )
 
 // RenderJSON outputs data as formatted JSON
-func RenderJSON(v interface{}) error {
+func RenderJSON(v any) error {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(v)
 }
 
 // RenderYAML outputs data as formatted YAML
-func RenderYAML(v interface{}) error {
+func RenderYAML(v any) error {
 	encoder := yaml.NewEncoder(os.Stdout)
 	encoder.SetIndent(2)
 	defer encoder.Close()

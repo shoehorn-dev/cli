@@ -50,9 +50,20 @@ func (c *Client) GetMe(ctx context.Context) (*MeResponse, error) {
 	if name == "" {
 		name = raw.User
 	}
+	email := raw.Email
+	// If the API returned a numeric ID instead of a real email, clear it
+	// so callers don't display meaningless IDs to the user.
+	if email != "" && !strings.Contains(email, "@") {
+		email = ""
+	}
+	if name != "" && !strings.Contains(name, " ") && !strings.Contains(name, "@") && name == raw.ID {
+		// Name is just the numeric ID — not useful
+		name = ""
+	}
+
 	return &MeResponse{
 		ID:       raw.ID,
-		Email:    raw.Email,
+		Email:    email,
 		Name:     name,
 		TenantID: raw.Tenant,
 		Roles:    raw.Roles,

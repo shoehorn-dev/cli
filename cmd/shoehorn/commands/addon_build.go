@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/addon"
+	"github.com/shoehorn-dev/cli/pkg/addon"
 	"github.com/spf13/cobra"
 )
 

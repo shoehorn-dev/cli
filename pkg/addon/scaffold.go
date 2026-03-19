@@ -145,17 +145,17 @@ func renderTemplate(tmplStr string, data templateData) string {
 
 // GenerateManifestJSON creates a manifest.json from ScaffoldConfig.
 func GenerateManifestJSON(cfg ScaffoldConfig) ([]byte, error) {
-	manifest := map[string]interface{}{
+	manifest := map[string]any{
 		"schemaVersion": 1,
 		"kind":          "addon",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"slug":     cfg.Name,
 			"name":     slugToDisplayName(cfg.Name),
 			"version":  "0.1.0",
 			"category": "custom",
 			"tier":     "free",
 		},
-		"addon": map[string]interface{}{
+		"addon": map[string]any{
 			"tier":    string(cfg.Tier),
 			"runtime": "quickjs",
 		},

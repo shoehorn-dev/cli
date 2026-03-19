@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/api"
-	"github.com/imbabamba/shoehorn-cli/pkg/tui"
+	"github.com/shoehorn-dev/cli/pkg/api"
+	"github.com/shoehorn-dev/cli/pkg/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +47,7 @@ func runAddonPublish(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("read manifest.json: %w", err)
 	}
 
-	var manifest map[string]interface{}
+	var manifest map[string]any
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		return fmt.Errorf("invalid manifest.json: %w", err)
 	}

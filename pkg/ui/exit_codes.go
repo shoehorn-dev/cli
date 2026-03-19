@@ -64,7 +64,7 @@ func ExitWithError(err error) {
 }
 
 // ExitWithMessage prints a message and exits with the given code
-func ExitWithMessage(code int, message string, args ...interface{}) {
+func ExitWithMessage(code int, message string, args ...any) {
 	if code == ExitSuccess {
 		fmt.Fprintf(os.Stdout, message+"\n", args...)
 	} else {

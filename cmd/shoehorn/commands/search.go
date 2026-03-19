@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/table"
-	"github.com/imbabamba/shoehorn-cli/pkg/api"
-	"github.com/imbabamba/shoehorn-cli/pkg/tui"
-	"github.com/imbabamba/shoehorn-cli/pkg/ui"
+	"github.com/shoehorn-dev/cli/pkg/api"
+	"github.com/shoehorn-dev/cli/pkg/tui"
+	"github.com/shoehorn-dev/cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

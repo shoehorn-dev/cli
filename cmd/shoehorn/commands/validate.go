@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/imbabamba/shoehorn-cli/pkg/api"
-	"github.com/imbabamba/shoehorn-cli/pkg/config"
+	"github.com/shoehorn-dev/cli/pkg/api"
+	"github.com/shoehorn-dev/cli/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -96,7 +96,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Output based on format
 	if validateFormat == "json" {
-		output := map[string]interface{}{
+		output := map[string]any{
 			"file":   filename,
 			"valid":  result.Valid,
 			"errors": result.Errors,

@@ -28,7 +28,7 @@ type ManifestConversionRequest struct {
 type ManifestConversionResponse struct {
 	Success    bool                      `json:"success"`
 	Content    string                    `json:"content,omitempty"` // For shoehorn/backstage
-	Mold       map[string]interface{}    `json:"mold,omitempty"`    // For mold
+	Mold       map[string]any            `json:"mold,omitempty"`    // For mold
 	Format     string                    `json:"format"`
 	Validation *ManifestValidationResult `json:"validation,omitempty"`
 }

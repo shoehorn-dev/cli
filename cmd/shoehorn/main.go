@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/imbabamba/shoehorn-cli/cmd/shoehorn/commands"
-	_ "github.com/imbabamba/shoehorn-cli/cmd/shoehorn/commands/get" // register get subcommands
+	"github.com/shoehorn-dev/cli/cmd/shoehorn/commands"
+	_ "github.com/shoehorn-dev/cli/cmd/shoehorn/commands/get" // register get subcommands
 )
 
 // version is injected at build time via ldflags:
