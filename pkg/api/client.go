@@ -16,14 +16,20 @@ import (
 // loadConfig is a package-level alias to avoid import cycles
 var loadConfig = config.Load
 
-// Client is a thin HTTP client for the Shoehorn API
+// maxResponseSize is the maximum allowed API response body size (10 MB).
+// Prevents denial-of-service from malicious or compromised servers.
+const maxResponseSize = 10 * 1024 * 1024
+
+// Client is a thin HTTP client for the Shoehorn API. It handles JSON
+// serialization, Bearer-token authentication, and structured error responses.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	token      string
 }
 
-// NewClient creates a new API client
+// NewClient creates a new API client pointed at baseURL with a 30-second
+// HTTP timeout. Call SetToken before making authenticated requests.
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -33,12 +39,13 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-// SetToken sets the Bearer token for authenticated requests
+// SetToken sets the Bearer token sent in the Authorization header of
+// every subsequent request. Pass an empty string to clear the token.
 func (c *Client) SetToken(token string) {
 	c.token = token
 }
 
-// GetToken returns the current token
+// GetToken returns the current Bearer token, or an empty string if none is set.
 func (c *Client) GetToken() string {
 	return c.token
 }
@@ -70,10 +77,13 @@ func (c *Client) do(ctx context.Context, method, path string, body, result any) 
 	}
 	defer resp.Body.Close()
 
-	// Read response body for error messages
-	respBody, err := io.ReadAll(resp.Body)
+	// Read response body with size limit to prevent DoS from oversized responses
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
+	}
+	if int64(len(respBody)) > maxResponseSize {
+		return fmt.Errorf("response too large (>%d bytes)", maxResponseSize)
 	}
 
 	// Handle non-2xx status codes
@@ -81,9 +91,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, result any) 
 		var errResp ErrorResponse
 		if err := json.Unmarshal(respBody, &errResp); err != nil {
 			// Couldn't parse error response, return raw status
-			return fmt.Errorf("API error (%d): %s", resp.StatusCode, string(respBody))
+			return NewAPIError(resp.StatusCode, string(respBody), "")
 		}
-		return fmt.Errorf("API error (%d): %s", resp.StatusCode, errResp.Error.Message)
+		return NewAPIError(resp.StatusCode, errResp.Error.Message, errResp.Error.Code)
 	}
 
 	// Decode success response
@@ -124,9 +134,12 @@ func (c *Client) doIgnoreStatus(ctx context.Context, method, path string, body, 
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return resp.StatusCode, fmt.Errorf("read response: %w", err)
+	}
+	if int64(len(respBody)) > maxResponseSize {
+		return resp.StatusCode, fmt.Errorf("response too large (>%d bytes)", maxResponseSize)
 	}
 
 	if result != nil && len(respBody) > 0 {
@@ -138,35 +151,43 @@ func (c *Client) doIgnoreStatus(ctx context.Context, method, path string, body, 
 	return resp.StatusCode, nil
 }
 
-// Get performs a GET request
+// Get performs a GET request to the given path and decodes the JSON response
+// into result. It returns an *APIError for non-2xx status codes.
 func (c *Client) Get(ctx context.Context, path string, result any) error {
 	return c.do(ctx, http.MethodGet, path, nil, result)
 }
 
-// Post performs a POST request
+// Post performs a POST request to the given path, encoding body as JSON and
+// decoding the JSON response into result. It returns an *APIError for non-2xx
+// status codes.
 func (c *Client) Post(ctx context.Context, path string, body, result any) error {
 	return c.do(ctx, http.MethodPost, path, body, result)
 }
 
-// Put performs a PUT request
+// Put performs a PUT request to the given path, encoding body as JSON and
+// decoding the JSON response into result. It returns an *APIError for non-2xx
+// status codes.
 func (c *Client) Put(ctx context.Context, path string, body, result any) error {
 	return c.do(ctx, http.MethodPut, path, body, result)
 }
 
-// Delete performs a DELETE request
+// Delete performs a DELETE request to the given path. It returns an *APIError
+// for non-2xx status codes.
 func (c *Client) Delete(ctx context.Context, path string) error {
 	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
-// NewClientFromConfig creates an API client from the current config profile.
-// Returns an error if not authenticated.
+// NewClientFromConfig creates an API client from the active configuration
+// profile, loading the server URL and access token automatically. It returns
+// ErrNotAuthenticated (wrapped) when no valid credentials are found in the
+// profile, prompting the caller to run "shoehorn auth login".
 func NewClientFromConfig() (*Client, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	if !cfg.IsAuthenticated() {
-		return nil, fmt.Errorf("not authenticated — run: shoehorn auth login --token <PAT>")
+		return nil, fmt.Errorf("%w — run: shoehorn auth login --token <PAT>", ErrNotAuthenticated)
 	}
 	profile, err := cfg.GetCurrentProfile()
 	if err != nil {
@@ -177,7 +198,8 @@ func NewClientFromConfig() (*Client, error) {
 	return c, nil
 }
 
-// ErrorResponse represents an API error response
+// ErrorResponse represents the standard JSON error envelope returned by the
+// Shoehorn API on non-2xx responses.
 type ErrorResponse struct {
 	Error struct {
 		Message string `json:"message"`

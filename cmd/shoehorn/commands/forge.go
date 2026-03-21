@@ -147,8 +147,10 @@ func buildInputs(inputsJSON string, kvPairs []string) (map[string]any, error) {
 	return inputs, nil
 }
 
-// coerceInputTypes converts string values from --input flags to their schema types.
-// JSON values from --inputs are already correctly typed.
+// coerceInputTypes converts string values supplied via --input key=value flags
+// to their schema-declared types (boolean, number, integer). Values that were
+// provided through --inputs JSON are already correctly typed and are skipped.
+// Unrecognized types or unparsable values are left as strings.
 func coerceInputTypes(inputs map[string]any, schema []api.MoldInput) {
 	typeMap := map[string]string{}
 	for _, inp := range schema {
@@ -177,7 +179,9 @@ func coerceInputTypes(inputs map[string]any, schema []api.MoldInput) {
 	}
 }
 
-// resolveAction determines which action to use: explicit flag, primary action, or first action.
+// resolveAction determines which action to use. It returns, in priority order:
+// the explicit --action flag value, the first action marked as primary, or the
+// first action in the list. It returns an empty string when no actions exist.
 func resolveAction(flag string, actions []api.MoldAction) string {
 	if flag != "" {
 		return flag
@@ -265,7 +269,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	})
 	if spinErr != nil {
 		fmt.Println(tui.ErrorBox("Execution Failed", spinErr.Error()))
-		return nil
+		return fmt.Errorf("execution failed: %w", spinErr)
 	}
 
 	run := result.(*api.ForgeRun)
@@ -448,7 +452,7 @@ func runCreateRun(cmd *cobra.Command, args []string) error {
 	})
 	if spinErr != nil {
 		fmt.Println(tui.ErrorBox("Run Failed", spinErr.Error()))
-		return nil
+		return fmt.Errorf("run failed: %w", spinErr)
 	}
 
 	run := result.(*api.ForgeRun)

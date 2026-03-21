@@ -173,8 +173,14 @@ func TestValidateBundle_Metamorphic_DeterministicChecksum(t *testing.T) {
 	bundlePath := filepath.Join(dir, "addon.js")
 	os.WriteFile(bundlePath, []byte("deterministic content"), 0644)
 
-	r1, _ := ValidateBundle(bundlePath)
-	r2, _ := ValidateBundle(bundlePath)
+	r1, err := ValidateBundle(bundlePath)
+	if err != nil {
+		t.Fatalf("first ValidateBundle() error: %v", err)
+	}
+	r2, err := ValidateBundle(bundlePath)
+	if err != nil {
+		t.Fatalf("second ValidateBundle() error: %v", err)
+	}
 	if r1.SHA256 != r2.SHA256 {
 		t.Errorf("same file produced different checksums: %q vs %q", r1.SHA256, r2.SHA256)
 	}

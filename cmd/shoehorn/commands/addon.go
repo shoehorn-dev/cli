@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/shoehorn-dev/cli/pkg/addon"
 	"github.com/shoehorn-dev/cli/pkg/api"
 	"github.com/shoehorn-dev/cli/pkg/tui"
 	"github.com/shoehorn-dev/cli/pkg/ui"
@@ -133,7 +134,10 @@ func runAddonStatus(_ *cobra.Command, args []string) error {
 		enabled = "no"
 	}
 
-	memStr := formatBytes(status.VMMemory)
+	memStr := "-"
+	if status.VMMemory > 0 {
+		memStr = addon.FormatBuildSize(status.VMMemory)
+	}
 
 	sections := []tui.DetailSection{
 		{
@@ -401,24 +405,6 @@ func init() {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-func formatBytes(b int64) string {
-	if b <= 0 {
-		return "-"
-	}
-	const (
-		kb = 1024
-		mb = 1024 * kb
-	)
-	switch {
-	case b >= mb:
-		return fmt.Sprintf("%.1f MB", float64(b)/float64(mb))
-	case b >= kb:
-		return fmt.Sprintf("%.1f KB", float64(b)/float64(kb))
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
-}
 
 func formatLogLevel(level string) string {
 	switch strings.ToLower(level) {

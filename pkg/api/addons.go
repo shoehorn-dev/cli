@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 )
 
 // ─── Addon Types ──────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ func (c *Client) ListInstalledAddons(ctx context.Context) ([]*Addon, error) {
 // GetAddonStatus returns the runtime status of a specific addon.
 func (c *Client) GetAddonStatus(ctx context.Context, slug string) (*AddonStatus, error) {
 	var status AddonStatus
-	if err := c.Get(ctx, fmt.Sprintf("/api/v1/addons/%s/status", slug), &status); err != nil {
+	if err := c.Get(ctx, fmt.Sprintf("/api/v1/addons/%s/status", url.PathEscape(slug)), &status); err != nil {
 		return nil, fmt.Errorf("get addon status: %w", err)
 	}
 	return &status, nil
@@ -104,7 +105,7 @@ func (c *Client) InstallAddon(ctx context.Context, slug string) (*Addon, error) 
 
 // UninstallAddon removes an installed addon.
 func (c *Client) UninstallAddon(ctx context.Context, slug string) error {
-	if err := c.Delete(ctx, fmt.Sprintf("/api/v1/marketplace/%s/uninstall", slug)); err != nil {
+	if err := c.Delete(ctx, fmt.Sprintf("/api/v1/marketplace/%s/uninstall", url.PathEscape(slug))); err != nil {
 		return fmt.Errorf("uninstall addon: %w", err)
 	}
 	return nil
@@ -112,7 +113,7 @@ func (c *Client) UninstallAddon(ctx context.Context, slug string) error {
 
 // EnableAddon enables a disabled addon.
 func (c *Client) EnableAddon(ctx context.Context, slug string) error {
-	if err := c.Post(ctx, fmt.Sprintf("/api/v1/marketplace/%s/enable", slug), nil, nil); err != nil {
+	if err := c.Post(ctx, fmt.Sprintf("/api/v1/marketplace/%s/enable", url.PathEscape(slug)), nil, nil); err != nil {
 		return fmt.Errorf("enable addon: %w", err)
 	}
 	return nil
@@ -120,7 +121,7 @@ func (c *Client) EnableAddon(ctx context.Context, slug string) error {
 
 // DisableAddon disables an addon without uninstalling.
 func (c *Client) DisableAddon(ctx context.Context, slug string) error {
-	if err := c.Post(ctx, fmt.Sprintf("/api/v1/marketplace/%s/disable", slug), nil, nil); err != nil {
+	if err := c.Post(ctx, fmt.Sprintf("/api/v1/marketplace/%s/disable", url.PathEscape(slug)), nil, nil); err != nil {
 		return fmt.Errorf("disable addon: %w", err)
 	}
 	return nil
@@ -134,7 +135,7 @@ func (c *Client) GetAddonLogs(ctx context.Context, slug string, limit int) ([]*A
 	var resp struct {
 		Entries []AddonLogEntry `json:"entries"`
 	}
-	path := fmt.Sprintf("/api/v1/addons/%s/logs?limit=%d", slug, limit)
+	path := fmt.Sprintf("/api/v1/addons/%s/logs?limit=%d", url.PathEscape(slug), limit)
 	if err := c.Get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("get addon logs: %w", err)
 	}
@@ -150,7 +151,9 @@ func (c *Client) GetAddonLogs(ctx context.Context, slug string, limit int) ([]*A
 func (c *Client) ListMarketplaceItems(ctx context.Context, kind string) ([]*MarketplaceItem, error) {
 	path := "/api/v1/marketplace"
 	if kind != "" {
-		path += "?kind=" + kind
+		q := url.Values{}
+		q.Set("kind", kind)
+		path += "?" + q.Encode()
 	}
 	var resp struct {
 		Items []MarketplaceItem `json:"items"`
@@ -194,7 +197,7 @@ func (c *Client) UploadAddonBundle(ctx context.Context, slug string, bundles map
 		return nil, fmt.Errorf("close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+fmt.Sprintf("/api/v1/marketplace/%s/bundle", slug), &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+fmt.Sprintf("/api/v1/marketplace/%s/bundle", url.PathEscape(slug)), &body)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -209,13 +212,16 @@ func (c *Client) UploadAddonBundle(ctx context.Context, slug string, bundles map
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
+	if int64(len(respBody)) > maxResponseSize {
+		return nil, fmt.Errorf("response too large (>%d bytes)", maxResponseSize)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("upload bundle failed (%d): %s", resp.StatusCode, string(respBody))
+		return nil, NewAPIError(resp.StatusCode, string(respBody), "")
 	}
 
 	var result BundleUploadResult

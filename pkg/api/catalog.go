@@ -41,7 +41,7 @@ type meAPIResponse struct {
 func (c *Client) GetMe(ctx context.Context) (*MeResponse, error) {
 	var raw meAPIResponse
 	if err := c.Get(ctx, "/api/v1/me", &raw); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get me: %w", err)
 	}
 	name := raw.Name
 	if name == "" {
@@ -203,7 +203,7 @@ func (c *Client) ListEntities(ctx context.Context, opts ListEntitiesOpts) ([]*En
 
 	var resp entitiesAPIResponse
 	if err := c.Get(ctx, path, &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list entities: %w", err)
 	}
 
 	entities := make([]*Entity, len(resp.Entities))
@@ -242,8 +242,8 @@ func (c *Client) GetEntity(ctx context.Context, id string) (*EntityDetail, error
 	var wrapper struct {
 		Entity entityDetailAPIResponse `json:"entity"`
 	}
-	if err := c.Get(ctx, "/api/v1/entities/"+id, &wrapper); err != nil {
-		return nil, err
+	if err := c.Get(ctx, "/api/v1/entities/"+url.PathEscape(id), &wrapper); err != nil {
+		return nil, fmt.Errorf("get entity %s: %w", id, err)
 	}
 	raw := wrapper.Entity
 
@@ -272,8 +272,8 @@ func (c *Client) GetEntityResources(ctx context.Context, id string) ([]*Resource
 	var resp struct {
 		Resources []Resource `json:"resources"`
 	}
-	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/resources", id), &resp); err != nil {
-		return nil, err
+	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/resources", url.PathEscape(id)), &resp); err != nil {
+		return nil, fmt.Errorf("get entity resources %s: %w", id, err)
 	}
 	resources := make([]*Resource, len(resp.Resources))
 	for i := range resp.Resources {
@@ -286,8 +286,8 @@ func (c *Client) GetEntityResources(ctx context.Context, id string) ([]*Resource
 // GetEntityStatus fetches an entity's live health/status
 func (c *Client) GetEntityStatus(ctx context.Context, id string) (*EntityStatus, error) {
 	var resp EntityStatus
-	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/status", id), &resp); err != nil {
-		return nil, err
+	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/status", url.PathEscape(id)), &resp); err != nil {
+		return nil, fmt.Errorf("get entity status %s: %w", id, err)
 	}
 	return &resp, nil
 }
@@ -297,8 +297,8 @@ func (c *Client) GetEntityChangelog(ctx context.Context, id string) ([]*Changelo
 	var resp struct {
 		Entries []ChangelogEntry `json:"entries"`
 	}
-	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/changelog", id), &resp); err != nil {
-		return nil, err
+	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/changelog", url.PathEscape(id)), &resp); err != nil {
+		return nil, fmt.Errorf("get entity changelog %s: %w", id, err)
 	}
 	entries := make([]*ChangelogEntry, len(resp.Entries))
 	for i := range resp.Entries {
@@ -330,8 +330,8 @@ type ScorecardCheck struct {
 // GetEntityScorecard fetches an entity's scorecard
 func (c *Client) GetEntityScorecard(ctx context.Context, id string) (*Scorecard, error) {
 	var resp Scorecard
-	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/scorecard", id), &resp); err != nil {
-		return nil, err
+	if err := c.Get(ctx, fmt.Sprintf("/api/v1/entities/%s/scorecard", url.PathEscape(id)), &resp); err != nil {
+		return nil, fmt.Errorf("get entity scorecard %s: %w", id, err)
 	}
 	return &resp, nil
 }
@@ -370,7 +370,7 @@ type TeamsResponse struct {
 func (c *Client) ListTeams(ctx context.Context) ([]*Team, error) {
 	var resp TeamsResponse
 	if err := c.Get(ctx, "/api/v1/teams", &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list teams: %w", err)
 	}
 	teams := make([]*Team, len(resp.Teams))
 	for i := range resp.Teams {
@@ -386,8 +386,8 @@ func (c *Client) GetTeam(ctx context.Context, idOrSlug string) (*TeamDetail, err
 		Team    Team         `json:"team"`
 		Members []TeamMember `json:"members"`
 	}
-	if err := c.Get(ctx, "/api/v1/teams/"+idOrSlug, &wrapper); err != nil {
-		return nil, err
+	if err := c.Get(ctx, "/api/v1/teams/"+url.PathEscape(idOrSlug), &wrapper); err != nil {
+		return nil, fmt.Errorf("get team %s: %w", idOrSlug, err)
 	}
 	return &TeamDetail{
 		Team:    wrapper.Team,
@@ -433,7 +433,7 @@ type usersAPIResponse struct {
 func (c *Client) ListUsers(ctx context.Context) ([]*User, error) {
 	var resp usersAPIResponse
 	if err := c.Get(ctx, "/api/v1/users", &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list users: %w", err)
 	}
 	users := make([]*User, len(resp.Items))
 	for i, u := range resp.Items {
@@ -453,8 +453,8 @@ func (c *Client) ListUsers(ctx context.Context) ([]*User, error) {
 // GetUser fetches a single user by ID
 func (c *Client) GetUser(ctx context.Context, id string) (*UserDetail, error) {
 	var raw userAPIItem
-	if err := c.Get(ctx, "/api/v1/users/"+id, &raw); err != nil {
-		return nil, err
+	if err := c.Get(ctx, "/api/v1/users/"+url.PathEscape(id), &raw); err != nil {
+		return nil, fmt.Errorf("get user %s: %w", id, err)
 	}
 	name := strings.TrimSpace(raw.FirstName + " " + raw.LastName)
 	if name == "" {
@@ -508,7 +508,7 @@ type RolesResponse struct {
 func (c *Client) ListGroups(ctx context.Context) ([]*Group, error) {
 	var resp groupsAPIResponse
 	if err := c.Get(ctx, "/api/v1/groups", &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list groups: %w", err)
 	}
 	groups := make([]*Group, len(resp.Items))
 	for i, g := range resp.Items {
@@ -523,8 +523,8 @@ func (c *Client) ListGroups(ctx context.Context) ([]*Group, error) {
 // GetGroupRoles fetches the roles mapped to a group
 func (c *Client) GetGroupRoles(ctx context.Context, groupName string) ([]*Role, error) {
 	var resp RolesResponse
-	if err := c.Get(ctx, fmt.Sprintf("/api/v1/groups/%s/roles", groupName), &resp); err != nil {
-		return nil, err
+	if err := c.Get(ctx, fmt.Sprintf("/api/v1/groups/%s/roles", url.PathEscape(groupName)), &resp); err != nil {
+		return nil, fmt.Errorf("get group roles %s: %w", groupName, err)
 	}
 	roles := make([]*Role, len(resp.Roles))
 	for i := range resp.Roles {
@@ -575,7 +575,7 @@ func (c *Client) Search(ctx context.Context, query string) (*SearchResult, error
 	q.Set("q", query)
 	var resp searchAPIResponse
 	if err := c.Get(ctx, "/api/v1/search?"+q.Encode(), &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("search %q: %w", query, err)
 	}
 
 	hits := make([]SearchHit, len(resp.Results))
@@ -643,7 +643,7 @@ func formatLastSeen(t *time.Time) string {
 func (c *Client) ListK8sAgents(ctx context.Context) ([]*K8sAgent, error) {
 	var resp k8sAgentsAPIResponse
 	if err := c.Get(ctx, "/api/v1/k8s/agents", &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list k8s agents: %w", err)
 	}
 	agents := make([]*K8sAgent, len(resp.Agents))
 	for i, raw := range resp.Agents {
@@ -817,7 +817,7 @@ type CreateRunRequest struct {
 func (c *Client) ListMolds(ctx context.Context) ([]*Mold, error) {
 	var resp MoldsResponse
 	if err := c.Get(ctx, "/api/v1/forge/molds", &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list molds: %w", err)
 	}
 	molds := make([]*Mold, len(resp.Molds))
 	for i := range resp.Molds {
@@ -832,8 +832,8 @@ func (c *Client) GetMold(ctx context.Context, slug string) (*MoldDetail, error) 
 	var wrapper struct {
 		Mold moldAPIResponse `json:"mold"`
 	}
-	if err := c.Get(ctx, "/api/v1/forge/molds/"+slug, &wrapper); err != nil {
-		return nil, err
+	if err := c.Get(ctx, "/api/v1/forge/molds/"+url.PathEscape(slug), &wrapper); err != nil {
+		return nil, fmt.Errorf("get mold %s: %w", slug, err)
 	}
 	raw := wrapper.Mold
 	inputs := parseMoldInputs(raw.Schema, raw.InputOrder, raw.Defaults)
@@ -863,7 +863,7 @@ func (c *Client) CreateRun(ctx context.Context, moldSlug, action string, inputs 
 		Run ForgeRun `json:"run"`
 	}
 	if err := c.Post(ctx, "/api/v1/forge/runs", req, &wrapper); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create run for mold %s: %w", moldSlug, err)
 	}
 	return &wrapper.Run, nil
 }
@@ -872,7 +872,7 @@ func (c *Client) CreateRun(ctx context.Context, moldSlug, action string, inputs 
 func (c *Client) ListRuns(ctx context.Context) (*ForgeRunsResponse, error) {
 	var resp ForgeRunsResponse
 	if err := c.Get(ctx, "/api/v1/forge/runs", &resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list runs: %w", err)
 	}
 	return &resp, nil
 }
@@ -882,8 +882,8 @@ func (c *Client) GetRun(ctx context.Context, runID string) (*ForgeRun, error) {
 	var wrapper struct {
 		Run ForgeRun `json:"run"`
 	}
-	if err := c.Get(ctx, "/api/v1/forge/runs/"+runID, &wrapper); err != nil {
-		return nil, err
+	if err := c.Get(ctx, "/api/v1/forge/runs/"+url.PathEscape(runID), &wrapper); err != nil {
+		return nil, fmt.Errorf("get run %s: %w", runID, err)
 	}
 	return &wrapper.Run, nil
 }

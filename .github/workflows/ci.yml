@@ -15,6 +15,10 @@ on:
       - '.gitignore'
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GO_VERSION: '1.26.1'
 

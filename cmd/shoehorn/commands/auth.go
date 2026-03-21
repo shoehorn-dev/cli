@@ -3,6 +3,8 @@ package commands
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -63,11 +65,52 @@ func init() {
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
-	if patToken == "" {
-		return fmt.Errorf("a Personal Access Token is required\n\nUsage:\n  shoehorn auth login --server <url> --token <PAT>")
+	token, source := resolveToken(patToken)
+	if token == "" {
+		return fmt.Errorf("a Personal Access Token is required\n\nUsage:\n  shoehorn auth login --server <url> --token <PAT>\n\nOr set SHOEHORN_TOKEN environment variable")
+	}
+	if source == "flag" {
+		fmt.Fprintln(os.Stderr, "Warning: passing tokens via --token is visible in process lists. Consider using SHOEHORN_TOKEN env var instead.")
 	}
 	serverURL = NormalizeServerURL(serverURL)
-	return runLoginWithPAT(serverURL, patToken)
+	if err := validateServerSecurity(serverURL); err != nil {
+		return err
+	}
+	return runLoginWithPAT(serverURL, token)
+}
+
+// resolveToken determines the token to use, checking the --token flag first,
+// then the SHOEHORN_TOKEN environment variable. Returns the token and its source
+// ("flag", "env", or "none").
+func resolveToken(flagValue string) (token, source string) {
+	if flagValue != "" {
+		return flagValue, "flag"
+	}
+	if envToken := os.Getenv("SHOEHORN_TOKEN"); envToken != "" {
+		return envToken, "env"
+	}
+	return "", "none"
+}
+
+// validateServerSecurity checks that non-localhost servers use HTTPS.
+// HTTP is only allowed for localhost/127.0.0.1/[::1] (development).
+func validateServerSecurity(serverURL string) error {
+	if serverURL == "" {
+		return nil
+	}
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		return fmt.Errorf("invalid server URL: %w", err)
+	}
+	if u.Scheme != "http" {
+		return nil // HTTPS or other schemes are fine
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil // HTTP is fine for local development
+	}
+	return fmt.Errorf("refusing plaintext HTTP connection to %q — your token would be sent unencrypted.\nUse HTTPS: %s",
+		host, strings.Replace(serverURL, "http://", "https://", 1))
 }
 
 // runLoginWithPAT authenticates using a Personal Access Token
@@ -83,7 +126,7 @@ func runLoginWithPAT(server, token string) error {
 	})
 	if err != nil {
 		fmt.Println(tui.ErrorBox("Authentication Failed", err.Error()))
-		return nil
+		return fmt.Errorf("authentication failed: %w", err)
 	}
 
 	me := result.(*api.MeResponse)
@@ -227,7 +270,9 @@ func runLogout(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// NormalizeServerURL normalizes a server URL
+// NormalizeServerURL ensures the URL has an HTTP(S) scheme and no trailing
+// slashes. A bare hostname such as "api.example.com" is prefixed with "https://".
+// The function returns the cleaned URL suitable for use as a Client base URL.
 func NormalizeServerURL(url string) string {
 	if url != "" && !hasScheme(url) {
 		url = "https://" + url
@@ -238,8 +283,8 @@ func NormalizeServerURL(url string) string {
 	return url
 }
 
-func hasScheme(url string) bool {
-	return len(url) > 7 && (url[:7] == "http://" || (len(url) > 8 && url[:8] == "https://"))
+func hasScheme(rawURL string) bool {
+	return strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://")
 }
 
 func formatDuration(d time.Duration) string {

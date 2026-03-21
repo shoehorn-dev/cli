@@ -3,6 +3,7 @@ package get
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/shoehorn-dev/cli/cmd/shoehorn/commands"
@@ -50,9 +51,11 @@ func runGetOwned(cmd *cobra.Command, args []string) error {
 
 	seen := map[string]bool{}
 	var allEntities []*api.Entity
+	var fetchWarnings []string
 	for _, team := range me.Teams {
 		entities, err := client.ListEntities(ctx, api.ListEntitiesOpts{Owner: team})
 		if err != nil {
+			fetchWarnings = append(fetchWarnings, fmt.Sprintf("warning: failed to list entities for team %q: %v", team, err))
 			continue
 		}
 		for _, e := range entities {
@@ -61,6 +64,11 @@ func runGetOwned(cmd *cobra.Command, args []string) error {
 				allEntities = append(allEntities, e)
 			}
 		}
+	}
+
+	// Print warnings for failed team fetches so the user knows results may be incomplete
+	for _, w := range fetchWarnings {
+		fmt.Fprintln(os.Stderr, w)
 	}
 
 	mode := ui.DetectMode(commands.Interactive(), commands.NoInteractive(), commands.OutputFormat())

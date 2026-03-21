@@ -12,12 +12,15 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   GO_VERSION: '1.26.1'
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   # ─── Build cross-platform binaries ─────────────────────────────────────────
@@ -503,12 +506,17 @@ jobs:
           echo "Generated Formula/shoehorn.rb"
           cat Formula/shoehorn.rb
 
+      - name: Checkout tap repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: shoehorn-dev/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
       - name: Push formula to tap repo
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/shoehorn-dev/homebrew-tap.git" tap
           mkdir -p tap/Formula
           cp Formula/shoehorn.rb tap/Formula/shoehorn.rb
           cd tap

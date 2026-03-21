@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"sync/atomic"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,13 +12,13 @@ import (
 )
 
 // plainMode disables TUI spinners and renders plain output instead.
-// Set via SetPlainMode(true) — used by --no-interactive flag.
-var plainMode bool
+// Uses atomic.Bool for safe concurrent access.
+var plainMode atomic.Bool
 
 // SetPlainMode forces all TUI spinners to run without animation.
 // Call this when --no-interactive is set or stdout is not a TTY.
 func SetPlainMode(v bool) {
-	plainMode = v
+	plainMode.Store(v)
 }
 
 // isTTY returns true if stdout is an interactive terminal.
@@ -92,7 +93,7 @@ func (m spinnerModel) View() string {
 // Falls back to plain execution (no animation) when stdout is not a TTY
 // or plain mode is enabled via SetPlainMode.
 func RunSpinner(message string, fn func() (any, error)) (any, error) {
-	if plainMode || !isTTY() {
+	if plainMode.Load() || !isTTY() {
 		fmt.Fprintf(os.Stderr, "%s\n", message)
 		return fn()
 	}

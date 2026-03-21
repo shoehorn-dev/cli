@@ -83,6 +83,9 @@ func Load() (*Config, error) {
 		}, nil
 	}
 
+	// Check file permissions - warn if world/group-readable (contains tokens)
+	warnLoosePermissions(configPath)
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
