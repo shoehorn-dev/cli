@@ -2,6 +2,7 @@ package commands
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +87,11 @@ func TestFormatDuration_TableDriven(t *testing.T) {
 // TestResolveToken_EnvVar tests that SHOEHORN_TOKEN env var is picked up.
 func TestResolveToken_EnvVar(t *testing.T) {
 	t.Setenv("SHOEHORN_TOKEN", "shp_from_env")
-	token, source := resolveToken("")
+	t.Setenv("SHOEHORN_TOKEN_FILE", "")
+	token, source, err := resolveToken("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if token != "shp_from_env" {
 		t.Errorf("resolveToken() token = %q, want %q", token, "shp_from_env")
 	}
@@ -98,7 +103,11 @@ func TestResolveToken_EnvVar(t *testing.T) {
 // TestResolveToken_FlagOverridesEnv tests that --token flag overrides env var.
 func TestResolveToken_FlagOverridesEnv(t *testing.T) {
 	t.Setenv("SHOEHORN_TOKEN", "shp_from_env")
-	token, source := resolveToken("shp_from_flag")
+	t.Setenv("SHOEHORN_TOKEN_FILE", "")
+	token, source, err := resolveToken("shp_from_flag")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if token != "shp_from_flag" {
 		t.Errorf("resolveToken() token = %q, want %q", token, "shp_from_flag")
 	}
@@ -109,10 +118,184 @@ func TestResolveToken_FlagOverridesEnv(t *testing.T) {
 
 // TestResolveToken_Empty tests that empty flag + no env returns empty.
 func TestResolveToken_Empty(t *testing.T) {
-	os.Unsetenv("SHOEHORN_TOKEN")
-	token, _ := resolveToken("")
+	t.Setenv("SHOEHORN_TOKEN", "")
+	t.Setenv("SHOEHORN_TOKEN_FILE", "")
+	token, source, err := resolveToken("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if token != "" {
 		t.Errorf("resolveToken() token = %q, want empty", token)
+	}
+	if source != "none" {
+		t.Errorf("resolveToken() source = %q, want %q", source, "none")
+	}
+}
+
+// ─── Security: SHOEHORN_TOKEN_FILE ───────────────────────────────────────────
+
+// TestResolveToken_TokenFile reads token from file pointed to by SHOEHORN_TOKEN_FILE.
+func TestResolveToken_TokenFile(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tmpFile, []byte("shp_from_file\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SHOEHORN_TOKEN_FILE", tmpFile)
+	t.Setenv("SHOEHORN_TOKEN", "")
+
+	token, source, err := resolveToken("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "shp_from_file" {
+		t.Errorf("resolveToken() token = %q, want %q", token, "shp_from_file")
+	}
+	if source != "file" {
+		t.Errorf("resolveToken() source = %q, want %q", source, "file")
+	}
+}
+
+// TestResolveToken_TokenFilePriority verifies SHOEHORN_TOKEN_FILE > SHOEHORN_TOKEN.
+func TestResolveToken_TokenFilePriority(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tmpFile, []byte("shp_from_file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SHOEHORN_TOKEN_FILE", tmpFile)
+	t.Setenv("SHOEHORN_TOKEN", "shp_from_env")
+
+	token, source, err := resolveToken("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "shp_from_file" {
+		t.Errorf("resolveToken() token = %q, want %q (file takes priority over env)", token, "shp_from_file")
+	}
+	if source != "file" {
+		t.Errorf("resolveToken() source = %q, want %q", source, "file")
+	}
+}
+
+// TestResolveToken_FlagOverridesFile verifies --token flag > SHOEHORN_TOKEN_FILE.
+func TestResolveToken_FlagOverridesFile(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tmpFile, []byte("shp_from_file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SHOEHORN_TOKEN_FILE", tmpFile)
+	token, source, err := resolveToken("shp_from_flag")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "shp_from_flag" {
+		t.Errorf("resolveToken() token = %q, want %q (flag takes priority)", token, "shp_from_flag")
+	}
+	if source != "flag" {
+		t.Errorf("resolveToken() source = %q, want %q", source, "flag")
+	}
+}
+
+// TestResolveToken_TokenFileNotFound verifies that a missing file returns an error
+// (the user explicitly configured SHOEHORN_TOKEN_FILE, so missing is not silent).
+func TestResolveToken_TokenFileNotFound(t *testing.T) {
+	t.Setenv("SHOEHORN_TOKEN_FILE", "/nonexistent/path/token")
+	t.Setenv("SHOEHORN_TOKEN", "")
+
+	_, _, err := resolveToken("")
+	if err == nil {
+		t.Error("expected error when SHOEHORN_TOKEN_FILE points to missing file")
+	}
+}
+
+// TestResolveToken_TokenFileTrimsWhitespace verifies trailing newlines are stripped.
+func TestResolveToken_TokenFileTrimsWhitespace(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tmpFile, []byte("  shp_with_spaces  \n\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SHOEHORN_TOKEN_FILE", tmpFile)
+	t.Setenv("SHOEHORN_TOKEN", "")
+
+	token, _, err := resolveToken("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "shp_with_spaces" {
+		t.Errorf("resolveToken() token = %q, want %q (should trim whitespace)", token, "shp_with_spaces")
+	}
+}
+
+// TestResolveToken_TokenFileEmpty verifies that an empty file returns an error.
+func TestResolveToken_TokenFileEmpty(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tmpFile, []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SHOEHORN_TOKEN_FILE", tmpFile)
+	t.Setenv("SHOEHORN_TOKEN", "")
+
+	_, _, err := resolveToken("")
+	if err == nil {
+		t.Error("expected error when token file is empty")
+	}
+	if err != nil && !strings.Contains(err.Error(), "empty") {
+		t.Errorf("error should mention 'empty', got: %v", err)
+	}
+}
+
+// TestResolveToken_TokenFileWhitespaceOnly verifies that a file with only whitespace
+// returns an error (treated as empty after trimming).
+func TestResolveToken_TokenFileWhitespaceOnly(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tmpFile, []byte("  \n\n  \n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SHOEHORN_TOKEN_FILE", tmpFile)
+	t.Setenv("SHOEHORN_TOKEN", "")
+
+	_, _, err := resolveToken("")
+	if err == nil {
+		t.Error("expected error when token file contains only whitespace")
+	}
+}
+
+// TestResolveToken_TokenFileIsDirectory verifies that pointing at a directory errors.
+func TestResolveToken_TokenFileIsDirectory(t *testing.T) {
+	t.Setenv("SHOEHORN_TOKEN_FILE", t.TempDir())
+	t.Setenv("SHOEHORN_TOKEN", "")
+
+	_, _, err := resolveToken("")
+	if err == nil {
+		t.Error("expected error when SHOEHORN_TOKEN_FILE points to a directory")
+	}
+	if err != nil && !strings.Contains(err.Error(), "directory") {
+		t.Errorf("error should mention 'directory', got: %v", err)
+	}
+}
+
+// TestResolveToken_TokenFileTooLarge verifies that oversized token files are rejected.
+func TestResolveToken_TokenFileTooLarge(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "token")
+	data := make([]byte, maxTokenFileSize+1)
+	for i := range data {
+		data[i] = 'x'
+	}
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SHOEHORN_TOKEN_FILE", tmpFile)
+	t.Setenv("SHOEHORN_TOKEN", "")
+
+	_, _, err := resolveToken("")
+	if err == nil {
+		t.Error("expected error for oversized token file")
 	}
 }
 
@@ -132,6 +315,7 @@ func TestValidateServerSecurity_TableDriven(t *testing.T) {
 		{"http remote blocked", "http://api.company.com", true},
 		{"http remote with port blocked", "http://api.company.com:8080", true},
 		{"empty string no error", "", false},
+		{"unsupported scheme rejected", "ftp://evil.com", true},
 	}
 
 	for _, tt := range tests {
@@ -147,13 +331,7 @@ func TestValidateServerSecurity_TableDriven(t *testing.T) {
 // TestRunLoginWithPAT_ErrorReturnsNonNil is a regression test for the error
 // swallowing bug where runLoginWithPAT returned nil on API failure, causing
 // exit code 0 instead of non-zero.
-//
-// This test verifies that when the API call fails, the function returns a
-// non-nil error so Cobra sets exit code 1.
 func TestRunLoginWithPAT_ErrorReturnsNonNil(t *testing.T) {
-	// runLoginWithPAT calls api.NewClient then GetMe via spinner.
-	// We can test the error propagation by calling with an unreachable server.
-	// The function should return a non-nil error, not nil.
 	err := runLoginWithPAT("http://127.0.0.1:1", "fake-token")
 	if err == nil {
 		t.Error("runLoginWithPAT with unreachable server returned nil error; want non-nil for correct exit code")

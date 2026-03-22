@@ -126,6 +126,11 @@ func convertDirectory(client *api.Client, dirPath string) error {
 				return err
 			}
 			outputPath = filepath.Join(convertOutput, relPath)
+			// Validate the resolved path doesn't escape the output directory (S10)
+			if err := validateOutputPath(outputPath, convertOutput); err != nil {
+				fmt.Fprintf(os.Stderr, "  Skipping %s: %v\n", path, err)
+				return nil
+			}
 		}
 
 		fmt.Printf("Converting %s...\n", path)
@@ -151,8 +156,36 @@ func convertDirectory(client *api.Client, dirPath string) error {
 	return nil
 }
 
+// validateOutputPath checks that outputPath is under or equal to baseDir.
+// Prevents path traversal when building output paths from user-supplied
+// relative input paths (security finding S10).
+func validateOutputPath(outputPath, baseDir string) error {
+	absOutput, err := filepath.Abs(outputPath)
+	if err != nil {
+		return fmt.Errorf("resolve output path: %w", err)
+	}
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return fmt.Errorf("resolve base directory: %w", err)
+	}
+	if absOutput != absBase && !strings.HasPrefix(absOutput, absBase+string(filepath.Separator)) {
+		return fmt.Errorf("path traversal detected: %q escapes output directory %q", outputPath, baseDir)
+	}
+	return nil
+}
+
+// maxConvertFileSize is the maximum input file size for conversion (10 MB).
+const maxConvertFileSize = 10 * 1024 * 1024
+
 func convertFile(client *api.Client, inputPath string, outputPath string) error {
-	// Read input file
+	// Read input file with size check to prevent memory exhaustion
+	info, err := os.Stat(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+	if info.Size() > maxConvertFileSize {
+		return fmt.Errorf("file %s exceeds maximum size of %d bytes (10MB)", inputPath, maxConvertFileSize)
+	}
 	data, err := os.ReadFile(inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)

@@ -12,10 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	validateInput  string
-	validateFormat string
-)
+// maxManifestSize is the maximum allowed manifest size for validation (10 MB).
+// Prevents memory exhaustion when reading from stdin or large files.
+const maxManifestSize int64 = 10 * 1024 * 1024
+
+var validateFormat string
 
 // validateCmd represents the validate command
 var validateCmd = &cobra.Command{
@@ -49,16 +50,26 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	var filename string
 
 	if len(args) == 0 || args[0] == "-" {
-		// Read from stdin
-		data, err := io.ReadAll(os.Stdin)
+		// Read from stdin with size limit to prevent memory exhaustion (S6)
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, maxManifestSize+1))
 		if err != nil {
 			return fmt.Errorf("failed to read from stdin: %w", err)
+		}
+		if int64(len(data)) > maxManifestSize {
+			return fmt.Errorf("manifest exceeds maximum size of %d bytes (10MB)", maxManifestSize)
 		}
 		content = string(data)
 		filename = "stdin"
 	} else {
-		// Read from file
+		// Read from file with size check before loading into memory (S6)
 		filename = args[0]
+		info, err := os.Stat(filename)
+		if err != nil {
+			return fmt.Errorf("failed to stat file: %w", err)
+		}
+		if info.Size() > maxManifestSize {
+			return fmt.Errorf("manifest %s exceeds maximum size of %d bytes (10MB)", filename, maxManifestSize)
+		}
 		data, err := os.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)

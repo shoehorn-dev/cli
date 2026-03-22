@@ -65,12 +65,15 @@ func init() {
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
-	token, source := resolveToken(patToken)
+	token, source, err := resolveToken(patToken)
+	if err != nil {
+		return err
+	}
 	if token == "" {
-		return fmt.Errorf("a Personal Access Token is required\n\nUsage:\n  shoehorn auth login --server <url> --token <PAT>\n\nOr set SHOEHORN_TOKEN environment variable")
+		return fmt.Errorf("a Personal Access Token is required\n\nUsage:\n  shoehorn auth login --server <url> --token <PAT>\n\nPreferred (avoids process-list exposure):\n  export SHOEHORN_TOKEN_FILE=/path/to/token\n  export SHOEHORN_TOKEN=shp_xxx")
 	}
 	if source == "flag" {
-		fmt.Fprintln(os.Stderr, "Warning: passing tokens via --token is visible in process lists. Consider using SHOEHORN_TOKEN env var instead.")
+		fmt.Fprintln(os.Stderr, "Warning: passing tokens via --token is visible in process lists. Prefer SHOEHORN_TOKEN_FILE or SHOEHORN_TOKEN env var instead.")
 	}
 	serverURL = NormalizeServerURL(serverURL)
 	if err := validateServerSecurity(serverURL); err != nil {
@@ -79,17 +82,45 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	return runLoginWithPAT(serverURL, token)
 }
 
-// resolveToken determines the token to use, checking the --token flag first,
-// then the SHOEHORN_TOKEN environment variable. Returns the token and its source
-// ("flag", "env", or "none").
-func resolveToken(flagValue string) (token, source string) {
+// maxTokenFileSize is the maximum allowed token file size (64 KiB).
+const maxTokenFileSize = 1 << 16
+
+// resolveToken determines the token to use. Priority order:
+//  1. --token flag (explicit CLI argument)
+//  2. SHOEHORN_TOKEN_FILE env var (read token from file — recommended for CI/CD)
+//  3. SHOEHORN_TOKEN env var (token in environment)
+//
+// Returns the token, its source ("flag", "file", "env", or "none"), and an
+// error when the user explicitly configured a source that cannot be read.
+func resolveToken(flagValue string) (token, source string, err error) {
 	if flagValue != "" {
-		return flagValue, "flag"
+		return flagValue, "flag", nil
+	}
+	if tokenFile := os.Getenv("SHOEHORN_TOKEN_FILE"); tokenFile != "" {
+		info, statErr := os.Stat(tokenFile)
+		if statErr != nil {
+			return "", "file", fmt.Errorf("SHOEHORN_TOKEN_FILE: %w", statErr)
+		}
+		if info.IsDir() {
+			return "", "file", fmt.Errorf("SHOEHORN_TOKEN_FILE %q is a directory, not a file", tokenFile)
+		}
+		if info.Size() > maxTokenFileSize {
+			return "", "file", fmt.Errorf("SHOEHORN_TOKEN_FILE %q is %d bytes (max %d)", tokenFile, info.Size(), maxTokenFileSize)
+		}
+		data, readErr := os.ReadFile(tokenFile)
+		if readErr != nil {
+			return "", "file", fmt.Errorf("SHOEHORN_TOKEN_FILE: %w", readErr)
+		}
+		t := strings.TrimSpace(string(data))
+		if t == "" {
+			return "", "file", fmt.Errorf("SHOEHORN_TOKEN_FILE %q is empty", tokenFile)
+		}
+		return t, "file", nil
 	}
 	if envToken := os.Getenv("SHOEHORN_TOKEN"); envToken != "" {
-		return envToken, "env"
+		return envToken, "env", nil
 	}
-	return "", "none"
+	return "", "none", nil
 }
 
 // validateServerSecurity checks that non-localhost servers use HTTPS.
@@ -102,8 +133,11 @@ func validateServerSecurity(serverURL string) error {
 	if err != nil {
 		return fmt.Errorf("invalid server URL: %w", err)
 	}
+	if u.Scheme == "https" {
+		return nil
+	}
 	if u.Scheme != "http" {
-		return nil // HTTPS or other schemes are fine
+		return fmt.Errorf("unsupported URL scheme %q: use https:// for remote servers or http://localhost for local development", u.Scheme)
 	}
 	host := u.Hostname()
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
@@ -125,7 +159,6 @@ func runLoginWithPAT(server, token string) error {
 		return client.GetMe(ctx)
 	})
 	if err != nil {
-		fmt.Println(tui.ErrorBox("Authentication Failed", err.Error()))
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 

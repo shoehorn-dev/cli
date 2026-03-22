@@ -4,6 +4,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/shoehorn-dev/cli/pkg/config"
 )
+
+// maxRedirects is the maximum number of HTTP redirects the client will follow.
+const maxRedirects = 3
 
 // loadConfig is a package-level alias to avoid import cycles
 var loadConfig = config.Load
@@ -29,12 +33,31 @@ type Client struct {
 }
 
 // NewClient creates a new API client pointed at baseURL with a 30-second
-// HTTP timeout. Call SetToken before making authenticated requests.
+// HTTP timeout, TLS 1.2 minimum, and redirect protection that strips the
+// Authorization header on cross-origin redirects to prevent credential leaks (S1, S3).
 func NewClient(baseURL string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= maxRedirects {
+					return fmt.Errorf("stopped after %d redirects", maxRedirects)
+				}
+				// Strip Authorization header on cross-origin redirects to prevent
+				// credential leaks to third-party servers (security finding S1).
+				// Same-origin redirects preserve the header.
+				if req.URL.Host != via[0].URL.Host {
+					req.Header.Del("Authorization")
+				}
+				return nil
+			},
 		},
 	}
 }
@@ -90,8 +113,13 @@ func (c *Client) do(ctx context.Context, method, path string, body, result any) 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var errResp ErrorResponse
 		if err := json.Unmarshal(respBody, &errResp); err != nil {
-			// Couldn't parse error response, return raw status
-			return NewAPIError(resp.StatusCode, string(respBody), "")
+			// Couldn't parse error response -- truncate raw body to avoid
+			// leaking server internals (stack traces, paths, etc). S8.
+			body := string(respBody)
+			if len(body) > 200 {
+				body = body[:200] + "... (truncated)"
+			}
+			return NewAPIError(resp.StatusCode, body, "")
 		}
 		return NewAPIError(resp.StatusCode, errResp.Error.Message, errResp.Error.Code)
 	}

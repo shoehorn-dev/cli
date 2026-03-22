@@ -2,6 +2,8 @@ package commands
 
 import (
 	"testing"
+
+	"github.com/shoehorn-dev/cli/pkg/api"
 )
 
 // TestBuildInputs tests JSON and key=value input merging.
@@ -111,9 +113,18 @@ func TestResolveAction_TableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Build api.MoldAction slice - can't import api from commands_test in same package
-			// so we test through the resolveAction function directly
-			// Note: since we're in the same package we can access unexported if needed
+			actions := make([]api.MoldAction, len(tt.actions))
+			for i, action := range tt.actions {
+				actions[i] = api.MoldAction{
+					Action:  action.action,
+					Primary: action.primary,
+				}
+			}
+
+			got := resolveAction(tt.flag, actions)
+			if got != tt.want {
+				t.Errorf("resolveAction(%q, %+v) = %q, want %q", tt.flag, actions, got, tt.want)
+			}
 		})
 	}
 }

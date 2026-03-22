@@ -268,7 +268,6 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		return client.CreateRun(ctx, moldSlug, action, inputs, runDryRunFlag)
 	})
 	if spinErr != nil {
-		fmt.Println(tui.ErrorBox("Execution Failed", spinErr.Error()))
 		return fmt.Errorf("execution failed: %w", spinErr)
 	}
 
@@ -451,7 +450,6 @@ func runCreateRun(cmd *cobra.Command, args []string) error {
 		return client.CreateRun(ctx, moldSlug, action, inputs, runDryRunFlag)
 	})
 	if spinErr != nil {
-		fmt.Println(tui.ErrorBox("Run Failed", spinErr.Error()))
 		return fmt.Errorf("run failed: %w", spinErr)
 	}
 

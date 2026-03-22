@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/shoehorn-dev/cli/pkg/addon"
 	"github.com/shoehorn-dev/cli/pkg/api"
 	"github.com/shoehorn-dev/cli/pkg/tui"
 	"github.com/spf13/cobra"
@@ -37,13 +38,20 @@ func runAddonPublish(_ *cobra.Command, _ []string) error {
 		dir = "."
 	}
 
-	// Read manifest.json
+	// Read manifest.json with size check (S7)
 	manifestPath := filepath.Join(dir, "manifest.json")
-	manifestData, err := os.ReadFile(manifestPath)
+	mInfo, err := os.Stat(manifestPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("no manifest.json found in %s", dir)
 		}
+		return fmt.Errorf("stat manifest.json: %w", err)
+	}
+	if mInfo.Size() > addon.MaxBundleSize {
+		return fmt.Errorf("manifest.json exceeds maximum size of %d bytes (2MB)", addon.MaxBundleSize)
+	}
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
 		return fmt.Errorf("read manifest.json: %w", err)
 	}
 
@@ -78,14 +86,29 @@ func runAddonPublish(_ *cobra.Command, _ []string) error {
 		fmt.Println("  Auto-installed for your tenant.")
 	}
 
-	// Step 2: Upload bundles if they exist
+	// Step 2: Upload bundles if they exist (check size before reading - S7)
 	bundles := map[string][]byte{}
 
-	if data, err := os.ReadFile(filepath.Join(dir, "dist", "addon.js")); err == nil {
-		bundles["backend"] = data
-	}
-	if data, err := os.ReadFile(filepath.Join(dir, "dist", "frontend.js")); err == nil {
-		bundles["frontend"] = data
+	for _, bundle := range []struct{ name, file string }{
+		{"backend", filepath.Join(dir, "dist", "addon.js")},
+		{"frontend", filepath.Join(dir, "dist", "frontend.js")},
+	} {
+		info, err := os.Stat(bundle.file)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("stat bundle %s: %w", bundle.name, err)
+		}
+		if info.Size() > addon.MaxBundleSize {
+			return fmt.Errorf("bundle %s (%s) exceeds maximum size of %d bytes (2MB)",
+				bundle.name, bundle.file, addon.MaxBundleSize)
+		}
+		data, err := os.ReadFile(bundle.file)
+		if err != nil {
+			return fmt.Errorf("read bundle %s: %w", bundle.name, err)
+		}
+		bundles[bundle.name] = data
 	}
 
 	if len(bundles) > 0 {
